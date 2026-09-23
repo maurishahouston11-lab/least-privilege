@@ -2,8 +2,21 @@
   var SCN = {};
   (function(){
     var pick = function(key, tag){ var d = window[key]; if(!d){ var el = document.getElementById(tag); if(el) try{ d = JSON.parse(el.textContent); }catch(e){} } return d; };
-    var a = pick('LP_DATA', 'scenario-data'), b = pick('LP_DATA2', 'scenario-data-2'), c = pick('LP_DATA3', 'scenario-data-3'), f = pick('LP_DATA4', 'scenario-data-4'), g5 = pick('LP_DATA5', 'scenario-data-5'), g6 = pick('LP_DATA6', 'scenario-data-6'), g7 = pick('LP_DATA7', 'scenario-data-7'), g8 = pick('LP_DATA8', 'scenario-data-8'), g9 = pick('LP_DATA9', 'scenario-data-9');
-    if(a) SCN.s1 = a; if(b) SCN.s2 = b; if(c) SCN.s3 = c; if(f) SCN.s4 = f; if(g5) SCN.s5 = g5; if(g6) SCN.s6 = g6; if(g7) SCN.s7 = g7; if(g8) SCN.s8 = g8; if(g9) SCN.s9 = g9;
+    var a = pick('LP_DATA', 'scenario-data'), b = pick('LP_DATA2', 'scenario-data-2'), c = pick('LP_DATA3', 'scenario-data-3'), f = pick('LP_DATA4', 'scenario-data-4'), g5 = pick('LP_DATA5', 'scenario-data-5'), g6 = pick('LP_DATA6', 'scenario-data-6'), g7 = pick('LP_DATA7', 'scenario-data-7'), g8 = pick('LP_DATA8', 'scenario-data-8'), g9 = pick('LP_DATA9', 'scenario-data-9'), g10 = pick('LP_DATA10', 'scenario-data-10'), g11 = pick('LP_DATA11', 'scenario-data-11'), g12 = pick('LP_DATA12', 'scenario-data-12'), g13 = pick('LP_DATA13', 'scenario-data-13'), g14 = pick('LP_DATA14', 'scenario-data-14');
+    if(a) SCN.s1 = a; if(b) SCN.s2 = b; if(c) SCN.s3 = c; if(f) SCN.s4 = f; if(g5) SCN.s5 = g5; if(g6) SCN.s6 = g6; if(g7) SCN.s7 = g7; if(g8) SCN.s8 = g8; if(g9) SCN.s9 = g9; if(g10) SCN.s10 = g10; if(g11) SCN.s11 = g11; if(g12) SCN.s12 = g12; if(g13) SCN.s13 = g13; if(g14) SCN.s14 = g14;
+    // The multi-file build ships one scenario eagerly and a manifest for the
+    // rest: every data file used to load before the roster could paint, which
+    // is a megabyte nobody needs to play one shift. A stub carries exactly what
+    // the roster renders — date, headline, blurb — with the check counts shaped
+    // as empty tickets so the existing roster code needs no special case.
+    var man = window.LP_MANIFEST;
+    if(man) man.forEach(function(m){
+      if(SCN[m.id]) return;
+      SCN[m.id] = {_stub:true, src:m.src, global:m.global, id:m.id, year:m.year, month:m.month,
+        dayOffset:m.dayOffset, dates:m.dates, startClock:m.startClock, eyebrow:m.eyebrow,
+        headline:m.headline, blurb:m.blurb,
+        tickets:m.steps.map(function(n){ return {checks:new Array(n)}; })};
+    });
   })();
   var D = SCN.s1 || SCN.s2;
   var DESK = !!(window.LPDesktop && window.LPDesktop.run);
@@ -16,7 +29,7 @@
   var ME = 'ia.analyst@' + DOM;
   var DN = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   var DATES = {'-3':'18','-2':'19','-1':'20','0':'21','1':'22','2':'23','3':'24','4':'25','5':'26','6':'27','7':'28'};
-  var APPROVERS = ['r.shah','g.oyelaran','m.cole','l.park'];
+  function APPROVERS(){ return (D.approvers && D.approvers.length) ? D.approvers : ['r.shah','g.oyelaran','m.cole','l.park']; }
   var DISP = [
     ['completed','Resolve — completed as requested'],
     ['completed-diff','Resolve — completed differently than requested'],
@@ -74,6 +87,38 @@
   var CUR = SCN.s1 ? 's1' : 's2';
   var S = fresh();
   function save(){ try{ localStorage.setItem(scnKey(S.scn || CUR), JSON.stringify(S)); }catch(e){} }
+  // Fetch a scenario's data file if this build did not inline it, then continue.
+  function ensureScenario(id, cb){
+    var s = SCN[id];
+    if(!s || !s._stub) return cb();
+    var el = document.createElement('script');
+    el.src = s.src; el.async = false;
+    el.onload = function(){
+      var d = window[s.global];
+      if(d){ SCN[id] = d; cb(); } else scnFailed(cb);
+    };
+    el.onerror = function(){ scnFailed(cb); };
+    document.head.appendChild(el);
+  }
+  // Fast first paint should not cost offline support. Once the roster is up and
+  // the browser is idle, quietly pull the remaining data files so the service
+  // worker has them before anybody goes offline.
+  function prefetchScenarios(){
+    var pending = Object.keys(SCN).filter(function(id){ return SCN[id] && SCN[id]._stub; });
+    if(!pending.length) return;
+    var i = 0;
+    var next = function(){
+      if(i >= pending.length) return;
+      var s = SCN[pending[i++]];
+      if(!s || !s._stub) return next();
+      fetch(s.src, {credentials:'same-origin'}).then(function(){ setTimeout(next, 120); }).catch(function(){});
+    };
+    if(window.requestIdleCallback) requestIdleCallback(next, {timeout:4000}); else setTimeout(next, 2000);
+  }
+  function scnFailed(cb){
+    openModal('Could not load this shift', '<p>The data file for this shift did not load. If you are offline and have not opened this shift before, it will not be available until you are back online.</p>', null);
+    if(cb) cb(true);
+  }
   function loadScenario(id){
     CUR = id; D = SCN[id]; initialLic = {}; D.users.forEach(function(u){ if(u.lic && u.lic!=='Not assigned') initialLic[u.lic] = (initialLic[u.lic]||0) + 1; });
     var loaded = null;
@@ -209,6 +254,16 @@
   function svcList(){ return S.adOnly.filter(function(o){ return o.kind==='svc' || (o.runsOn && o.runsOn.length); }); }
   function jobBy(name){ var hit = null; S.adOnly.forEach(function(o){ (o.runsOn||[]).forEach(function(j, i){ if(j.name===name) hit = {o:o, j:j, i:i}; }); }); return hit; }
   function jobOk(j){ return j.essential ? (j.enabled && j.cred==='current') : (!j.enabled || j.cred==='current'); }
+  function appBy(n){ for(var i=0;i<D.apps.length;i++){ if(D.apps[i].name===n) return D.apps[i]; } return null; }
+  // Single sign-on state lives on S so a shift can be replayed from saved state.
+  // D.apps carries the starting configuration; sso(a) returns the live copy.
+  function sso(a){ var n = typeof a==='string' ? a : a.name; S.sso = S.sso || {};
+    if(!S.sso[n]){ var seed = (appBy(n)||{}).sso; S.sso[n] = seed ? JSON.parse(JSON.stringify(seed)) : null; }
+    return S.sso[n]; }
+  function scim(a){ var n = typeof a==='string' ? a : a.name; S.scim = S.scim || {};
+    if(!S.scim[n]){ var seed = (appBy(n)||{}).scim; S.scim[n] = seed ? JSON.parse(JSON.stringify(seed)) : null; }
+    return S.scim[n]; }
+  function certExpired(c){ return !!(c && c.expired); }
   function appReg(id){ for(var i=0;i<S.appRegs.length;i++){ if(S.appRegs[i].id===id) return S.appRegs[i]; } return null; }
   function scanHit(id){ var h = null; (S.scan.hits||[]).forEach(function(x){ if(x.id===id) h = x; }); return h; }
   function adOnlyBy(sam){ for(var i=0;i<S.adOnly.length;i++){ if(S.adOnly[i].sam===sam) return S.adOnly[i]; } return null; }
@@ -576,7 +631,7 @@
   function editProps(upn){
     var u = U(upn), cur = u.acctExp || 'Not set';
     openModal('Edit properties — ' + u.name, '<dl class="kv sm"><dt>Title</dt><dd>' + esc(u.title) + ' <span class="faint">(HR-managed)</span></dd><dt>Department</dt><dd>' + esc(u.dept) + ' <span class="faint">(HR-managed)</span></dd>' + (u.contractEnd ? '<dt>Contract end</dt><dd>' + esc(u.contractEnd) + ' <span class="faint">(from the SOW)</span></dd>' : '') + '</dl>' +
-      '<label class="fld" for="ep-exp">Account expires</label><select class="in" id="ep-exp"><option>Not set</option>' + (u.contractEnd ? '<option>' + esc(u.contractEnd) + ' 23:59</option>' : '') + '<option>Oct 1, 2026 23:59</option><option>Dec 31, 2026 23:59</option></select>', 'Save', function(){
+      '<label class="fld" for="ep-exp">Account expires</label><select class="in" id="ep-exp"><option>Not set</option>' + (u.contractEnd ? '<option>' + esc(u.contractEnd) + ' 23:59</option>' : '') + (D.expiryOptions||['Oct 1, 2026 23:59','Dec 31, 2026 23:59']).map(function(o){ return '<option>' + esc(o) + '</option>'; }).join('') + '</select>', 'Save', function(){
         var v = document.getElementById('ep-exp').value; if(v===cur) return;
         act('Update user', u.name, function(){ u.acctExp = v; }, 'Account expiration updated', {refs:['u:'+upn], detail:'accountExpires: ' + cur + ' → ' + v});
       }, function(){ document.getElementById('ep-exp').value = cur; });
@@ -805,6 +860,159 @@
       act('Remove OU delegation', x.ou, function(){ S.deleg.splice(i,1); if(x.kind==='user') markPriv(U(x.who) || {}); }, 'Removed delegation for ' + (U(x.who) ? U(x.who).name : x.who), {cat:'Active Directory', refs:x.kind==='user' ? ['u:'+x.who] : ['g:'+x.who], detail:x.rights + ' removed from OU=' + x.ou + ' (granted ' + x.since + ' by ' + x.by + ').'});
     }, true);
   }
+  // ---- conditional access: an evaluator, not a list --------------------
+  // Policies were records with a state field; a sign-in showed a hand-written
+  // list of outcomes. This reads the same policies and actually decides, so
+  // What-If and the sign-in log can never disagree with each other or with the
+  // policies as configured.
+  function caNorm(p){
+    var n = p.n;
+    if(!n){
+      // older scenarios describe assignment and controls in prose; parse it once
+      var a = p.assign || '', x = p.exclude || '', ctl = p.controls || '', nm = p.name || '';
+      n = {
+        allUsers: /all users/i.test(a),
+        admins: /administrator|admin role/i.test(a),
+        groups: /all users|administrator/i.test(a) ? [] : a.split(/,\s*/).filter(Boolean),
+        exclude: (!x || /^none$/i.test(x)) ? [] : x.split(/,\s*/).map(function(s){ return s.trim(); }).filter(Boolean),
+        block: /block/i.test(ctl),
+        mfa: /multi-?factor/i.test(ctl),
+        compliant: /compliant/i.test(ctl),
+        phish: /phishing-resistant|security key/i.test(ctl),
+        onLegacy: /legacy auth/i.test(nm + ' ' + ctl),
+        onAnon: /anonymis|anonymiz|tor exit|vpn/i.test(nm),
+        onRisk: /risk/i.test(nm) ? 'medium' : '',
+        apps: p.apps || null
+      };
+      p.n = n;
+    }
+    return n;
+  }
+  function caScopeText(p){
+    var n = caNorm(p);
+    return (n.allUsers ? 'All users' : n.admins ? 'Anyone holding an admin role' : n.groups.join(', ') || 'Nobody') +
+      (n.exclude.length ? ' · except ' + n.exclude.join(', ') : '');
+  }
+  function caControlText(p){
+    var n = caNorm(p), r = [];
+    if(n.block) return 'Block access';
+    if(n.mfa) r.push('Multi-factor authentication');
+    if(n.compliant) r.push('A compliant device');
+    if(n.phish) r.push('A phishing-resistant method');
+    return r.join(' and ') || (p.controls || 'No control');
+  }
+  // does this policy's assignment cover the person in this context?
+  function isBreakGlass(u){ return !!u && (/break-glass|emergency/i.test(u.title || '') || /^bg\./.test(u.upn || '')); }
+  function caCovers(p, ctx){
+    var n = caNorm(p), u = U(ctx.upn);
+    var name = u ? u.name : ctx.upn;
+    for(var i=0;i<n.exclude.length;i++){
+      var ex = n.exclude[i];
+      if(name === ex) return false;
+      // exclusions are written as a category at least as often as a name
+      if(/emergency|break-?glass/i.test(ex) && isBreakGlass(u)) return false;
+      if(u && names(u).indexOf(ex) >= 0) return false;
+      if(u && (u.roles||[]).some(function(r){ return r.r === ex; })) return false;
+    }
+    if(n.allUsers) return true;
+    if(n.admins) return !!(u && (u.roles||[]).length);
+    return !!(u && n.groups.some(function(g){ return names(u).indexOf(g) >= 0; }));
+  }
+  // does the condition side match? returns null when the policy simply does not apply
+  function caCondition(p, ctx){
+    var n = caNorm(p);
+    if(n.onLegacy) return ctx.client === 'legacy' ? 'legacy authentication client' : null;
+    if(n.onAnon) return ctx.anon ? 'sign-in from an anonymising service' : null;
+    if(n.onRisk) return (ctx.risk && ctx.risk !== 'none') ? ctx.risk + ' sign-in risk' : null;
+    if(n.apps && n.apps.length) return n.apps.indexOf(ctx.app) >= 0 ? 'application in scope' : null;
+    return 'all sign-ins in scope';
+  }
+  function caEval(ctx){
+    var rows = [], blocked = false, failed = null, required = [];
+    S.ca.forEach(function(p){
+      if(p.state === 'Off' || /^off/i.test(p.state)){ rows.push({p:p, applied:false, why:'Policy is off', res:'Not applied'}); return; }
+      if(!caCovers(p, ctx)){ rows.push({p:p, applied:false, why:'User is out of scope or excluded', res:'Not applied'}); return; }
+      var cond = caCondition(p, ctx);
+      if(!cond){ rows.push({p:p, applied:false, why:'Conditions not met', res:'Not applied'}); return; }
+      var n = caNorm(p), report = /report/i.test(p.state), out, ok = true, need = [];
+      if(n.block){ ok = false; out = report ? 'Report-only: would have blocked' : 'Blocked'; if(!report) blocked = true; }
+      else {
+        if(n.phish && !ctx.phishResistant){ ok = false; need.push('a phishing-resistant method'); }
+        if(n.compliant && !ctx.compliant){ ok = false; need.push('a compliant device'); }
+        if(n.mfa && !ctx.mfa){ ok = false; need.push('multi-factor authentication'); }
+        if(ok) out = 'Satisfied';
+        else out = report ? 'Report-only: would have required ' + need.join(' and ') : 'Failed: requires ' + need.join(' and ');
+        if(!ok && !report){ failed = failed || need.join(' and '); }
+        if(n.mfa) required.push('MFA'); if(n.compliant) required.push('compliant device'); if(n.phish) required.push('phishing-resistant method');
+      }
+      rows.push({p:p, applied:true, why:cond, res:out, report:report});
+    });
+    var outcome = blocked ? 'Blocked by policy' : failed ? 'Interrupted — ' + failed : 'Success';
+    return {rows:rows, outcome:outcome, required:required};
+  }
+  // a policy that can lock every administrator out of the tenant is the single
+  // most expensive mistake available on this page, so it is surfaced by name
+  function caRisks(){
+    var out = [];
+    var bg = allUsers().filter(isBreakGlass);
+    S.ca.forEach(function(p){
+      var n = caNorm(p);
+      var unconditional = !n.onLegacy && !n.onAnon && !n.onRisk && !(n.apps && n.apps.length);
+      if(p.state === 'On' && unconditional && (n.block || n.compliant || n.phish) && (n.allUsers || n.admins)){
+        var unprotected = bg.filter(function(u){ return caCovers(p, {upn:u.upn}); });
+        if(unprotected.length) out.push({id:p.id, text:p.id + ' applies to ' + (n.allUsers ? 'all users' : 'every admin role') + ' with no exclusion for ' + unprotected.map(function(u){ return u.name; }).join(' or ') + '. If it goes wrong there is no account left that can turn it off.'});
+      }
+      if(/report/i.test(p.state) && n.block) out.push({id:p.id, text:p.id + ' is in report-only and its control is Block access. It is recording what it would have stopped and stopping nothing.'});
+    });
+    return out;
+  }
+  function caWhatIf(){
+    var w = S.whatif = S.whatif || {upn:(allUsers().filter(function(u){ return u.status==='Enabled' && !u.service; })[0]||{}).upn, app:(D.apps[0]||{}).name, client:'browser', mfa:true, compliant:false, anon:false, risk:'none', phishResistant:false};
+    var r = caEval(w);
+    var users = allUsers().filter(function(u){ return u.status!=='Not created'; });
+    var rows = r.rows.map(function(x){
+      return '<tr><td><span class="mono">' + esc(x.p.id) + '</span> ' + esc(x.p.name) + '</td>' +
+        '<td class="faint">' + esc(x.why) + '</td>' +
+        '<td class="' + (/^Blocked|^Failed/.test(x.res) ? 'res bad' : /^Report/.test(x.res) ? 'res warn' : x.applied ? 'res ok' : 'faint') + '">' + esc(x.res) + '</td></tr>';
+    }).join('');
+    return card('What if', '<span class="faint" style="font-size:12.5px">Evaluates the policies exactly as a sign-in would</span>',
+      '<div class="card-b"><div class="row" style="gap:10px;flex-wrap:wrap">' +
+      '<label class="fld" style="margin:0">User<select class="in" id="wi-u">' + users.map(function(u){ return '<option value="' + esc(u.upn) + '"' + (w.upn===u.upn?' selected':'') + '>' + esc(u.name) + '</option>'; }).join('') + '</select></label>' +
+      '<label class="fld" style="margin:0">Application<select class="in" id="wi-a">' + D.apps.map(function(a){ return '<option' + (w.app===a.name?' selected':'') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>' +
+      '<label class="fld" style="margin:0">Client<select class="in" id="wi-c"><option value="browser"' + (w.client==='browser'?' selected':'') + '>Browser</option><option value="legacy"' + (w.client==='legacy'?' selected':'') + '>Legacy authentication client</option></select></label>' +
+      '<label class="fld" style="margin:0">Sign-in risk<select class="in" id="wi-r"><option value="none"' + (w.risk==='none'?' selected':'') + '>None</option><option value="medium"' + (w.risk==='medium'?' selected':'') + '>Medium</option><option value="high"' + (w.risk==='high'?' selected':'') + '>High</option></select></label>' +
+      '</div><div class="row" style="gap:14px;flex-wrap:wrap;margin-top:8px">' +
+      '<label class="check"><input type="checkbox" id="wi-m"' + (w.mfa?' checked':'') + '> Completed multi-factor</label>' +
+      '<label class="check"><input type="checkbox" id="wi-d"' + (w.compliant?' checked':'') + '> Managed, compliant device</label>' +
+      '<label class="check"><input type="checkbox" id="wi-p"' + (w.phishResistant?' checked':'') + '> Used a phishing-resistant method</label>' +
+      '<label class="check"><input type="checkbox" id="wi-n"' + (w.anon?' checked':'') + '> From an anonymising service</label>' +
+      '</div>' +
+      '<div class="k" style="margin-top:14px">Result: <span class="' + (/^Blocked/.test(r.outcome) ? 'res bad' : /^Interrupted/.test(r.outcome) ? 'res warn' : 'res ok') + '">' + esc(r.outcome) + '</span></div>' +
+      '</div>' + table(['Policy','Why it applies','Outcome'], rows, ''));
+  }
+  function caEdit(id){
+    var p = caBy(id), n = caNorm(p), groups = D.groups.map(function(g){ return g.name; });
+    var people = allUsers().filter(function(u){ return u.status!=='Not created'; });
+    openModal('Policy — ' + p.id,
+      '<p class="hint">' + esc(p.name) + '</p>' +
+      '<label class="fld" for="ce-s">State</label><select class="in" id="ce-s"><option value="On"' + (p.state==='On'?' selected':'') + '>On</option><option value="Report-only"' + (/report/i.test(p.state)?' selected':'') + '>Report-only</option><option value="Off (draft)"' + (/^off/i.test(p.state)?' selected':'') + '>Off</option></select>' +
+      '<label class="fld" for="ce-a">Assigned to</label><select class="in" id="ce-a"><option value="all"' + (n.allUsers?' selected':'') + '>All users</option><option value="admins"' + (n.admins?' selected':'') + '>Anyone holding an admin role</option>' +
+        groups.map(function(g){ return '<option value="' + esc(g) + '"' + (n.groups.indexOf(g)>=0?' selected':'') + '>' + esc(g) + '</option>'; }).join('') + '</select>' +
+      '<label class="fld">Excluded</label>' +
+      people.filter(function(u){ return /break-glass|emergency/i.test(u.title||'') || n.exclude.indexOf(u.name)>=0; }).map(function(u){
+        return '<label class="check"><input type="checkbox" class="ce-x" value="' + esc(u.name) + '"' + (n.exclude.indexOf(u.name)>=0?' checked':'') + '> ' + esc(u.name) + '</label>'; }).join('') +
+      '<p class="hint">Excluding the emergency accounts is not an exception to the policy. It is the thing that lets you undo the policy.</p>',
+      'Save', function(){
+        var st = document.getElementById('ce-s').value, as = document.getElementById('ce-a').value;
+        var ex = [].slice.call(modalEl.querySelectorAll('.ce-x')).filter(function(x){ return x.checked; }).map(function(x){ return x.value; });
+        act('Update conditional access policy', p.id, function(){
+          p.state = st;
+          p.assign = as==='all' ? 'All users' : as==='admins' ? 'Administrators' : as;
+          p.exclude = ex.join(', ') || 'None';
+          p.n = null;
+        }, p.id + ' updated', {cat:'Security', detail:p.id + ' · ' + st + ' · assigned to ' + p.assign + ' · excluding ' + (p.exclude) + '.'});
+      });
+  }
   function caToggle(id){
     var p = null; S.ca.forEach(function(x){ if(x.id===id) p = x; });
     var next = p.state==='On' ? 'Report-only' : 'On';
@@ -1016,11 +1224,205 @@
     '  Set-MfMailbox -Identity <upn> -Type Shared    Add-MfMailboxPermission -Identity <upn> -User <upn>',
     '  Remove-MfUserLicense -UserId <upn>            Get-MfShareAccess -Path <path> [-User <upn>]',
     '',
+    'Cmdlets that emit objects (these can be piped):',
+    '  Get-ADUser -Filter *      Get-MgUser        Get-MgGroup',
+    '  Get-MgSignIn              Get-MgAuditLog    Get-MfTicket',
+    '',
+    'Pipeline:',
+    '  Where-Object { $_.Property -eq \'value\' }     also -ne -gt -lt -like -match -contains, and -and',
+    '  Sort-Object <Property> [-Descending]          Select-Object <A,B> [-First n]',
+    '  Measure-Object                                ForEach-Object { $_.Property }',
+    '  Format-Table [<A,B>]                          Format-List',
+    '',
+    'Variables:',
+    '  $stale = Get-ADUser -Filter * | Where-Object { $_.Enabled -eq $false }',
+    '  $stale | Measure-Object',
+    '',
     'clear · help'
   ];
-  function psRun(raw){
+  // ---------- the shell ----------
+  // What used to be here ran exactly one cmdlet and printed. That is not what
+  // anybody actually types: the job is usually "find the ones where X and count
+  // them", which is a pipeline. Object-producing cmdlets now return rows, the
+  // pipeline operators work on those rows, and a pipeline that ends without a
+  // formatter prints itself as a table. Anything that changes state still goes
+  // through the old path, so every mutation keeps its audit entry.
+  function psVal(o, prop){
+    if(prop === '_') return o;
+    var k = Object.keys(o).filter(function(x){ return x.toLowerCase() === String(prop).toLowerCase(); })[0];
+    return k ? o[k] : undefined;
+  }
+  function psCompare(a, op, b){
+    var na = parseFloat(a), nb = parseFloat(b), nums = !isNaN(na) && !isNaN(nb) && String(a).trim()!=='' && String(b).trim()!=='';
+    var sa = String(a==null ? '' : a), sb = String(b==null ? '' : b);
+    switch(op){
+      case '-eq': return nums ? na===nb : sa.toLowerCase()===sb.toLowerCase();
+      case '-ne': return !psCompare(a,'-eq',b);
+      case '-gt': return nums ? na>nb : sa>sb;
+      case '-ge': return nums ? na>=nb : sa>=sb;
+      case '-lt': return nums ? na<nb : sa<sb;
+      case '-le': return nums ? na<=nb : sa<=sb;
+      case '-like': return new RegExp('^' + sb.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*/g,'.*').replace(/\?/g,'.') + '$','i').test(sa);
+      case '-notlike': return !psCompare(a,'-like',b);
+      case '-match': try{ return new RegExp(sb,'i').test(sa); }catch(err){ return false; }
+      case '-notmatch': return !psCompare(a,'-match',b);
+      case '-contains': return Array.isArray(a) ? a.some(function(x){ return String(x).toLowerCase()===sb.toLowerCase(); }) : sa.toLowerCase().indexOf(sb.toLowerCase())>=0;
+      default: return false;
+    }
+  }
+  // Where-Object accepts both shapes people write: the script block and the
+  // comparison-parameter form.
+  function psWhere(rows, args){
+    var body = args.join(' ').trim();
+    var m = body.match(/^\{\s*(.+?)\s*\}$/);
+    if(m) body = m[1];
+    var parts = body.split(/\s+-and\s+/i);
+    return rows.filter(function(o){
+      return parts.every(function(cl){
+        var mm = cl.match(/^\$_\.([A-Za-z0-9_]+)\s+(-\w+)\s+(.+)$/) || cl.match(/^([A-Za-z0-9_]+)\s+(-\w+)\s+(.+)$/);
+        if(!mm) return true;
+        var val = psVal(o, mm[1]), rhs = mm[3].replace(/^["']|["']$/g,'');
+        if(/^\$(true|false)$/i.test(rhs)) return psCompare(!!val, mm[2], /true/i.test(rhs));
+        return psCompare(val, mm[2], rhs);
+      });
+    });
+  }
+  function psRows(rows, cols){
+    if(!rows.length){ psOut('No results.'); return; }
+    cols = cols && cols.length ? cols : Object.keys(rows[0]);
+    psTable(rows.map(function(o){ return cols.map(function(c){ var v = psVal(o, c); return Array.isArray(v) ? v.join(', ') : (v==null ? '' : v); }); }), cols);
+  }
+  function psList(rows){
+    if(!rows.length){ psOut('No results.'); return; }
+    rows.forEach(function(o){
+      psOut('');
+      var ks = Object.keys(o), w = Math.max.apply(null, ks.map(function(k){ return k.length; }));
+      ks.forEach(function(k){ var v = o[k]; psOut(k + Array(w-k.length+1).join(' ') + ' : ' + (Array.isArray(v) ? v.join(', ') : (v==null ? '' : v))); });
+    });
+    psOut('');
+  }
+  // the object-producing side of the shell
+  function psSource(cmd, args){
+    var par = function(n){ for(var i=0;i<args.length;i++){ if(args[i].toLowerCase()==='-'+n) return args[i+1]; } return null; };
+    var pos = args.filter(function(a){ return a[0]!=='-'; })[0];
+    switch(cmd){
+      case 'get-aduser': {
+        var f = par('filter'), id = par('identity') || pos;
+        if(!f && !(id==='*')) return null;                       // single-identity form keeps the old detailed output
+        return allUsers().filter(onPrem).map(function(x){
+          return {SamAccountName:x.ad.sam, Name:x.name, Enabled:x.ad.enabled, OU:x.ad.ou, Department:x.dept, Title:x.title,
+                  EmployeeId:x.eid||'', PasswordLastSet:x.ad.pwdSet, PasswordNeverExpires:!!x.ad.pwdNeverExpires,
+                  LastLogonDate:x.ad.lastLogon, LockedOut:!!x.ad.locked, MemberOf:x.ad.groups.slice(), UserPrincipalName:mail(x.upn)};
+        }).concat(S.adOnly.map(function(o){
+          return {SamAccountName:o.sam, Name:o.name, Enabled:o.enabled, OU:o.ou, Department:'', Title:'', EmployeeId:'',
+                  PasswordLastSet:o.pwdSet, PasswordNeverExpires:!!o.pwdNeverExpires, LastLogonDate:o.lastLogon,
+                  LockedOut:false, MemberOf:(o.groups||[]).slice(), UserPrincipalName:''};
+        }));
+      }
+      case 'get-mguser': {
+        return allUsers().filter(function(x){ return x.status!=='Not created'; }).map(function(x){
+          return {DisplayName:x.name, UserPrincipalName:mail(x.upn), AccountEnabled:x.status==='Enabled',
+                  Department:x.dept, JobTitle:x.title, EmployeeId:x.eid||'', License:x.lic||'',
+                  Groups:names(x), AdminRoles:(x.roles||[]).map(function(r){ return r.r + ' (' + r.type + ')'; }),
+                  MfaMethods:(x.mfa||[]).slice(), Sessions:(x.sessions||[]).length};
+        });
+      }
+      case 'get-mggroup': {
+        return D.groups.map(function(g){
+          return {DisplayName:g.name, Description:g.desc, Tier:g.tier||'standard', Source:g.source||'Cloud',
+                  Owners:(S.owners[g.name]||[]).map(pname), Members:members(g.name).length,
+                  RoleAssignable:!!g.roleAssignable, Dynamic:isDyn(g.name)};
+        });
+      }
+      case 'get-mgsignin': {
+        return allSignins().map(function(s){
+          return {Time:s.t, User:pname(s.upn), UserPrincipalName:s.upn, Resource:s.app, Location:s.loc,
+                  IpAddress:s.ip, Device:s.dev, Mfa:s.mfa, Result:s.res};
+        });
+      }
+      case 'get-mgauditlog': {
+        return S.audit.concat(D.auditSeed).map(function(a){
+          return {Time:a.tl, Actor:a.actor.replace('@'+DOM,'').replace(' (PowerShell)',''), Via:/PowerShell/.test(a.actor) ? 'PowerShell' : 'Console', Category:a.cat, Activity:a.action, Target:a.target};
+        });
+      }
+      case 'get-mfticket': {
+        return visibleTickets().map(function(t){
+          var st = S.tickets[t.id];
+          return {Id:t.id, Type:t.type, Subject:t.subject, Priority:t.pri, Requester:pname(t.requester), Status:st.status, Disposition:st.disp||''};
+        });
+      }
+      default: return null;
+    }
+  }
+  function psExec(raw){
     var line = raw.trim(); if(!line) return;
     psOut('PS C:\\> ' + line, 'in');
+    S.psvars = S.psvars || {};
+    // $x = ...
+    var asn = line.match(/^\$([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/);
+    var assignTo = null;
+    if(asn){ assignTo = asn[1]; line = asn[2].trim(); }
+    // bare $x prints the variable
+    var bare = line.match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/);
+    if(bare && !assignTo){
+      var vr = S.psvars[bare[1]];
+      if(!vr){ psOut('The variable $' + bare[1] + ' has not been set.', 'err'); return; }
+      psRows(vr); return;
+    }
+    var segs = line.split(/\s*\|\s*/);
+    var first = segs[0];
+    var vm = first.match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/);
+    var rows = null;
+    if(vm){
+      rows = S.psvars[vm[1]];
+      if(!rows){ psOut('The variable $' + vm[1] + ' has not been set.', 'err'); return; }
+      rows = rows.slice();
+    } else {
+      var t0 = first.match(/"[^"]*"|'[^']*'|\S+/g).map(function(t){ return t.replace(/^["']|["']$/g, ''); });
+      rows = psSource(t0[0].toLowerCase(), t0.slice(1));
+      if(rows === null){
+        if(segs.length > 1){
+          var known = /^(get|set|add|remove|new|search|move|enable|disable|unlock|revoke|start)-/i.test(t0[0]);
+          psOut(t0[0] + (known ? ' : this cmdlet changes state or returns a single object, so it cannot be piped in this session.' : ' : the term \'' + t0[0] + '\' is not recognized in this session.') +
+            ' Cmdlets that emit objects: Get-ADUser -Filter *, Get-MgUser, Get-MgGroup, Get-MgSignIn, Get-MgAuditLog, Get-MfTicket.', 'err'); return; }
+        psRun(raw, true); return;                 // a state-changing or single-object cmdlet: old path, with its audit entry
+      }
+    }
+    var printed = false;
+    for(var i=1;i<segs.length;i++){
+      var tk = segs[i].match(/"[^"]*"|'[^']*'|\{[^}]*\}|\S+/g) || [];
+      var op = (tk[0]||'').toLowerCase(), rest = tk.slice(1).map(function(t){ return t.replace(/^["']|["']$/g,''); });
+      if(op==='where-object' || op==='where' || op==='?'){ rows = psWhere(rows, segs[i].replace(/^\s*\S+\s*/,'').split(/\s+/)); continue; }
+      if(op==='sort-object' || op==='sort'){
+        var key = rest.filter(function(a){ return a[0]!=='-'; })[0], desc = rest.some(function(a){ return /^-desc/i.test(a); });
+        rows = rows.slice().sort(function(a,b){ var x = psVal(a,key), y = psVal(b,key); return (x>y?1:x<y?-1:0) * (desc?-1:1); }); continue;
+      }
+      if(op==='select-object' || op==='select'){
+        var n = rest.filter(function(a){ return a[0]!=='-'; });
+        var firstN = null; for(var j=0;j<rest.length;j++){ if(/^-first$/i.test(rest[j])) firstN = +rest[j+1]; }
+        if(firstN){ rows = rows.slice(0, firstN); }
+        var props = n.filter(function(x){ return !/^\d+$/.test(x); }).join(' ').split(/\s*,\s*/).filter(Boolean);
+        if(props.length){ rows = rows.map(function(o){ var r = {}; props.forEach(function(pr){ var k = Object.keys(o).filter(function(x){ return x.toLowerCase()===pr.toLowerCase(); })[0] || pr; r[k] = psVal(o, pr); }); return r; }); }
+        continue;
+      }
+      if(op==='measure-object' || op==='measure'){ psOut(''); psOut('Count : ' + rows.length); psOut(''); printed = true; continue; }
+      if(op==='foreach-object' || op==='foreach' || op==='%'){
+        var body2 = segs[i].replace(/^\s*\S+\s*/,'').replace(/^\{|\}$/g,'').trim();
+        var pm = body2.match(/^\$_\.([A-Za-z0-9_]+)$/);
+        if(pm){ rows.forEach(function(o){ var v = psVal(o, pm[1]); psOut(Array.isArray(v) ? v.join(', ') : String(v==null?'':v)); }); printed = true; continue; }
+        psOut('ForEach-Object : this session supports { $_.Property } only.', 'err'); return;
+      }
+      if(op==='format-table' || op==='ft'){ psRows(rows, rest.filter(function(a){ return a[0]!=='-'; }).join(' ').split(/\s*,\s*/).filter(Boolean)); printed = true; continue; }
+      if(op==='format-list' || op==='fl'){ psList(rows); printed = true; continue; }
+      psOut(tk[0] + ' : not supported in this session. Pipeline cmdlets available: Where-Object, Sort-Object, Select-Object, Measure-Object, ForEach-Object, Format-Table, Format-List.', 'err');
+      return;
+    }
+    if(assignTo){ S.psvars[assignTo] = rows; psOut(rows.length + ' object(s) stored in $' + assignTo + '.'); return; }
+    if(!printed) psRows(rows);
+  }
+  function psRun(raw, quiet){
+    var line = raw.trim(); if(!line) return;
+    if(!quiet) psOut('PS C:\\> ' + line, 'in');
     var tok = line.match(/"[^"]*"|'[^']*'|\S+/g).map(function(t){ return t.replace(/^["']|["']$/g, ''); });
     var cmd = tok[0].toLowerCase(), args = tok.slice(1);
     var par = function(n){ for(var i=0;i<args.length;i++){ if(args[i].toLowerCase()==='-'+n) return args[i+1]; } return null; };
@@ -1134,6 +1536,12 @@
       case 'sync': return pSync();
       case 'gpo': return pGPO();
       case 'ca': return pCA();
+      case 'vault': return pVault();
+      case 'report': return pReport();
+      case 'authm': return pAuthM();
+      case 'ext': return pExt();
+      case 'pkg': return pPkg();
+      case 'hr': return pHr();
       case 'ps': return pPS();
       case 'review': return pReview();
       case 'findings': return pFindings();
@@ -1168,6 +1576,728 @@
     if(st.status==='returned') return '<span class="pill act">Action needed</span>';
     return st.assignee ? '<span class="pill prog">In progress</span>' : '<span class="pill open">New</span>';
   }
+  // ---- the credential vault --------------------------------------------
+  // PIM answers "may you hold this role"; a vault answers "who has the password
+  // right now, why, for how long, and is it still valid afterwards". The two
+  // controls that make a vault a control rather than a password list are the
+  // end of the check-out and what happens at it: rotate on return, or the
+  // credential everybody who ever borrowed it still knows.
+  function vault(){ if(!S.vault && D.vault) S.vault = JSON.parse(JSON.stringify(D.vault)); return S.vault; }
+  function safeBy(id){ var v = vault(); if(!v) return null; for(var i=0;i<v.safes.length;i++){ if(v.safes[i].id===id) return v.safes[i]; } return null; }
+  function vAcc(id){ var v = vault(); if(!v) return null; var hit = null;
+    v.safes.forEach(function(s){ (s.accounts||[]).forEach(function(a){ if(a.id===id){ a._safe = s; hit = a; } }); }); return hit; }
+  function vLog(entry){ var v = vault(); v.log = v.log || []; v.log.unshift(entry); }
+  function vOverdue(a){ return a.checkedOutBy && a.dueAt != null && S.clock > a.dueAt; }
+  function pVault(){
+    var v = vault();
+    if(!v) return '<h1 class="pg">Credential vault</h1><div class="card"><div class="card-b faint">No vault in this shift.</div></div>';
+    var unmanaged = (v.unmanaged || []).map(function(o){
+      return '<tr><td class="mono">' + esc(o.name) + '<div class="faint" style="font-family:var(--sans);font-size:12.5px">' + esc(o.note||'') + '</div></td>' +
+        '<td>' + esc(o.kind||'') + '</td><td class="mono faint">' + esc(o.lastChanged||'unknown') + '</td>' +
+        '<td>' + esc(o.knownBy||'') + '</td>' +
+        '<td><button class="btn sm" data-vonboard="' + esc(o.id) + '" type="button">Bring into the vault</button></td></tr>';
+    }).join('');
+    var safes = v.safes.map(function(s){
+      var p = s.policy || {};
+      var rows = (s.accounts||[]).map(function(a){
+        var out = !!a.checkedOutBy, over = vOverdue(a);
+        return '<tr' + (over ? ' class="denyrow"' : '') + '><td class="mono">' + esc(a.name) + '<div class="faint" style="font-family:var(--sans);font-size:12.5px">' + esc(a.kind||'') + '</div></td>' +
+          '<td class="mono faint">' + esc(a.lastRotated || 'never') + '</td>' +
+          '<td>' + (out ? '<b>' + esc(pname(a.checkedOutBy)) + '</b><div class="faint" style="font-size:12.5px">' + esc(a.reason||'') + (a.ticket ? ' \u00b7 ' + esc(a.ticket) : '') + '</div>' : '<span class="faint">In the safe</span>') + '</td>' +
+          '<td>' + (over ? '<span class="pill dis">Overdue since ' + esc(hhmm(a.dueAt)) + '</span>' : out ? '<span class="pill warn">Due back ' + esc(hhmm(a.dueAt)) + '</span>' : '<span class="pill en">Available</span>') + '</td>' +
+          '<td><div class="row" style="gap:6px">' +
+            (out ? '<button class="btn sm" data-vin="' + esc(a.id) + '" type="button">Check in</button>'
+                 : '<button class="btn sec sm" data-vout="' + esc(a.id) + '" type="button">Check out</button>') +
+            '<button class="btn sec sm" data-vrot="' + esc(a.id) + '" type="button">Rotate now</button>' +
+            (a.kind==='Break-glass' || s.circular ? '<button class="btn sec sm" data-voff="' + esc(a.id) + '" type="button">Move out of the vault</button>' : '') +
+          '</div></td></tr>';
+      }).join('');
+      var warn = [];
+      if(!p.rotateOnReturn) warn.push('This safe does not rotate on return, so every credential borrowed from it is still valid afterwards and is known by whoever borrowed it.');
+      if(!p.recordSession) warn.push('Sessions are not recorded, so a check-out here produces a name and a time and no account of what was done.');
+      if(p.checkout !== 'approval') warn.push('Anybody who can see this safe can take a credential from it with nobody approving.');
+      if(s.circular) warn.push('The credentials in this safe are reachable only through the same sign-in they exist to recover. If that sign-in is what fails, this safe cannot be opened.');
+      return card(esc(s.name), '<button class="btn sm" data-vpol="' + esc(s.id) + '" type="button">Policy</button>',
+        '<div class="card-b"><dl class="kv sm">' +
+        '<dt>Check-out</dt><dd>' + (p.checkout==='approval' ? 'Requires approval from ' + esc(pname(p.approver||'')) : '<span style="color:var(--warn);font-weight:600">Self-service</span>') + '</dd>' +
+        '<dt>Maximum duration</dt><dd>' + (p.maxMins ? esc(String(p.maxMins)) + ' minutes' : '<span style="color:var(--warn);font-weight:600">No limit</span>') + '</dd>' +
+        '<dt>On return</dt><dd>' + (p.rotateOnReturn ? 'The credential is rotated' : '<span style="color:var(--bad);font-weight:600">The credential is left as it is</span>') + '</dd>' +
+        '<dt>Session recording</dt><dd>' + (p.recordSession ? 'On' : '<span style="color:var(--warn);font-weight:600">Off</span>') + '</dd>' +
+        '</dl>' + warn.map(function(w){ return '<div class="banner warn"><span>' + esc(w) + '</span></div>'; }).join('') + '</div>' +
+        table(['Account','Last rotated','Held by','State',''], rows, 'No accounts in this safe.'));
+    }).join('');
+    var log = (v.log||[]).map(function(l){
+      return '<tr><td class="mono nowrap">' + esc(l.t) + '</td><td>' + esc(l.who) + '</td><td class="mono">' + esc(l.account) + '</td>' +
+        '<td>' + esc(l.action) + '</td><td class="faint">' + esc(l.detail||'') + '</td>' +
+        '<td>' + (l.recording ? '<button class="btn sec sm" data-vrec="' + esc(l.recording) + '" type="button">Recording</button>' : '<span class="faint">\u2014</span>') + '</td></tr>';
+    }).join('');
+    return '<h1 class="pg">Credential vault</h1><p class="sub">' + esc(v.name) + ' \u00b7 privileged credentials nobody memorises. A check-out is a named person, a reason, and an end.</p>' +
+      (unmanaged ? card('Privileged accounts not in the vault', '<span class="pill warn">' + (v.unmanaged||[]).length + '</span>',
+        table(['Account','Type','Password last changed','Known by',''], unmanaged, '')) : '') +
+      safes +
+      card('Check-out log', '', table(['Time','Who','Account','Action','Detail',''], log, 'Nothing has been taken out this shift.'));
+  }
+  function vaultCheckout(id){
+    var a = vAcc(id), s = a._safe, p = s.policy || {};
+    openModal('Check out \u2014 ' + a.name,
+      '<p class="hint">Whoever holds this credential can do anything it can do, and the only record of why will be what you type here.</p>' +
+      (p.checkout==='approval' ? '<div class="banner warn"><span>This safe requires approval from <b>' + esc(pname(p.approver||'')) + '</b>. The credential is released when they answer.</span></div>' : '') +
+      (p.rotateOnReturn ? '' : '<div class="banner bad"><span>This safe does not rotate on return. Whatever you do here, you will still know this password afterwards, and so will everyone who has ever checked it out.</span></div>') +
+      '<label class="fld" for="vo-t">Ticket</label><input class="in mono" id="vo-t" placeholder="e.g. VLT-1402">' +
+      '<label class="fld" for="vo-w">Reason</label><input class="in" id="vo-w" placeholder="What you are going to do with it">' +
+      '<label class="fld" for="vo-d">Check out for</label><select class="in" id="vo-d">' +
+        [30,60,120,240,480].filter(function(m){ return !p.maxMins || m <= p.maxMins; }).map(function(m){ return '<option value="' + m + '">' + m + ' minutes</option>'; }).join('') +
+        (p.maxMins ? '' : '<option value="0">No end time</option>') + '</select>',
+      'Check out', function(){
+        var t = document.getElementById('vo-t').value.trim(), w = document.getElementById('vo-w').value.trim(), d = +document.getElementById('vo-d').value;
+        if(w.length < 4) return false;
+        if(!/^[A-Za-z]{2,4}-\d{3,5}$/.test(t)) return false;
+        act('Check out privileged credential', a.name, function(){
+          a.checkedOutBy = ME; a.reason = w; a.ticket = t; a.outAt = S.clock; a.dueAt = d ? S.clock + d : null; a.noEnd = !d;
+          a.recorded = !!p.recordSession;
+          vLog({t:stamp(), who:'ia.analyst', account:a.name, action:'Checked out', detail:w + ' \u00b7 ' + t + ' \u00b7 ' + (d ? d + ' minutes' : 'no end time'), recording:p.recordSession ? ('REC-' + a.id + '-' + S.clock) : ''});
+        }, 'Credential released', {cat:'Security', detail:a.name + ' checked out. ' + w + ' (' + t + '). ' + (d ? 'Due back in ' + d + ' minutes.' : 'No end time set.') + (p.recordSession ? ' Session is being recorded.' : ' Session is not recorded.')});
+      });
+  }
+  function vaultCheckin(id, forced){
+    var a = vAcc(id), s = a._safe, p = s.policy || {};
+    openModal((forced ? 'Force check-in \u2014 ' : 'Check in \u2014 ') + a.name,
+      (forced ? '<p>' + esc(pname(a.checkedOutBy)) + ' has held this since <b>' + esc(hhmm(a.outAt)) + '</b>' + (a.dueAt!=null ? ' and it was due back at <b>' + esc(hhmm(a.dueAt)) + '</b>' : ' with no end time') + '.</p>' : '<p>Returning <span class="mono">' + esc(a.name) + '</span> to the safe.</p>') +
+      (p.rotateOnReturn ? '<p class="hint">The credential is rotated on return, so the copy anybody memorised stops working the moment you do this.</p>'
+                        : '<div class="banner bad"><span>This safe is set to leave the credential as it is. Checking it in makes it available again and changes nothing about who knows it.</span></div>') +
+      '<label class="fld" for="vi-w">Note</label><input class="in" id="vi-w" placeholder="Recorded against the check-out">',
+      forced ? 'Force check-in' : 'Check in', function(){
+        var w = document.getElementById('vi-w').value.trim();
+        act(forced ? 'Force check-in of privileged credential' : 'Check in privileged credential', a.name, function(){
+          var who = a.checkedOutBy;
+          if(a.ticket) a.lastTicket = a.ticket;
+          if(forced) a.forcedIn = true;
+          a.checkedOutBy = ''; a.reason = ''; a.ticket = ''; a.dueAt = null; a.noEnd = false; a.wasForced = !!forced;
+          if(p.rotateOnReturn){ a.lastRotated = stamp(); a.rotatedOnReturn = true; }
+          vLog({t:stamp(), who:'ia.analyst', account:a.name, action:forced ? 'Forced check-in' : 'Checked in',
+                detail:(forced ? 'Held by ' + pname(who) + '. ' : '') + (p.rotateOnReturn ? 'Rotated on return. ' : 'NOT rotated. ') + w});
+        }, p.rotateOnReturn ? 'Returned and rotated' : 'Returned \u2014 not rotated',
+        {cat:'Security', detail:a.name + ' ' + (forced ? 'forced back into the safe' : 'returned') + '. ' + (p.rotateOnReturn ? 'Rotated on return.' : 'Not rotated; the previous password is still valid.') + ' ' + w});
+      }, null, forced);
+  }
+  function vaultRotate(id){
+    var a = vAcc(id);
+    openModal('Rotate now \u2014 ' + a.name,
+      '<p>Sets a new password immediately and stores it in the vault. Anything still using the old one \u2014 a scheduled task, a saved session, a person \u2014 stops working.</p>' +
+      (a.checkedOutBy ? '<div class="banner warn"><span>This credential is checked out to ' + esc(pname(a.checkedOutBy)) + ' right now. Rotating will break whatever they are in the middle of.</span></div>' : ''),
+      'Rotate', function(){
+        act('Rotate privileged credential', a.name, function(){
+          a.lastRotated = stamp(); a.rotated = true;
+          vLog({t:stamp(), who:'ia.analyst', account:a.name, action:'Rotated', detail:'Password changed and stored in the vault.'});
+        }, a.name + ' rotated', {cat:'Security', detail:a.name + ' rotated out of band.'});
+      });
+  }
+  function vaultPolicy(id){
+    var s = safeBy(id), p = s.policy = s.policy || {};
+    var cands = allUsers().filter(function(u){ return u.status==='Enabled' && !u.service && !u.shared; });
+    openModal('Safe policy \u2014 ' + s.name,
+      '<p class="hint">Three of these four decide whether this is a control or a password list. The rotation one is the control.</p>' +
+      '<label class="fld" for="vp-c">Check-out</label><select class="in" id="vp-c"><option value="self"' + (p.checkout!=='approval'?' selected':'') + '>Self-service</option><option value="approval"' + (p.checkout==='approval'?' selected':'') + '>Requires approval</option></select>' +
+      '<label class="fld" for="vp-a">Approver</label><select class="in" id="vp-a">' + cands.map(function(u){ return '<option value="' + esc(u.upn) + '"' + (p.approver===u.upn?' selected':'') + '>' + esc(u.name) + '</option>'; }).join('') + '</select>' +
+      '<label class="fld" for="vp-m">Maximum duration</label><select class="in" id="vp-m"><option value="0"' + (!p.maxMins?' selected':'') + '>No limit</option>' +
+        [30,60,120,240].map(function(m){ return '<option value="' + m + '"' + (p.maxMins===m?' selected':'') + '>' + m + ' minutes</option>'; }).join('') + '</select>' +
+      '<label class="check"><input type="checkbox" id="vp-r"' + (p.rotateOnReturn?' checked':'') + '> Rotate the credential when it is checked back in</label>' +
+      '<label class="check"><input type="checkbox" id="vp-s"' + (p.recordSession?' checked':'') + '> Record the session</label>',
+      'Save', function(){
+        var c = document.getElementById('vp-c').value, ap = document.getElementById('vp-a').value,
+            mm = +document.getElementById('vp-m').value, ro = document.getElementById('vp-r').checked, rs = document.getElementById('vp-s').checked;
+        act('Update safe policy', s.name, function(){ p.checkout = c; p.approver = ap; p.maxMins = mm; p.rotateOnReturn = ro; p.recordSession = rs; },
+          s.name + ' policy updated', {cat:'Security', detail:s.name + ' \u00b7 ' + (c==='approval' ? 'approval by ' + pname(ap) : 'self-service') + ', max ' + (mm||'unlimited') + ' minutes, rotate on return ' + (ro?'on':'off') + ', recording ' + (rs?'on':'off') + '.'});
+      });
+  }
+  function vaultOnboard(id){
+    var v = vault(), o = (v.unmanaged||[]).filter(function(x){ return x.id===id; })[0]; if(!o) return;
+    openModal('Bring into the vault \u2014 ' + o.name,
+      '<p>The password becomes vault-managed. Nobody needs to know it again, and everybody who does know it keeps knowing it until it is rotated.</p>' +
+      (o.knownBy ? '<div class="banner warn"><span>Currently known by <b>' + esc(o.knownBy) + '</b>.</span></div>' : '') +
+      '<label class="fld" for="vb-s">Safe</label><select class="in" id="vb-s">' + v.safes.map(function(s){ return '<option value="' + esc(s.id) + '">' + esc(s.name) + '</option>'; }).join('') + '</select>' +
+      '<label class="check"><input type="checkbox" id="vb-r" checked> Rotate it now, so the copies in circulation stop working</label>',
+      'Onboard', function(){
+        var sid = document.getElementById('vb-s').value, rot = document.getElementById('vb-r').checked, s = safeBy(sid);
+        act('Onboard account to the vault', o.name, function(){
+          v.unmanaged = v.unmanaged.filter(function(x){ return x.id!==id; });
+          s.accounts = s.accounts || [];
+          s.accounts.push({id:o.id, name:o.name, kind:o.kind||'', lastRotated:rot ? stamp() : (o.lastChanged||'never'),
+            checkedOutBy:'', onboarded:true, rotatedOnOnboard:rot});
+          vLog({t:stamp(), who:'ia.analyst', account:o.name, action:'Onboarded', detail:'Into ' + s.name + '. ' + (rot ? 'Rotated on onboarding.' : 'NOT rotated; the password in circulation still works.')});
+        }, o.name + ' is vault-managed', {cat:'Security', detail:o.name + ' onboarded into ' + s.name + '. ' + (rot ? 'Rotated immediately.' : 'Not rotated \u2014 the password known by ' + (o.knownBy||'whoever had it') + ' is still valid.')});
+      });
+  }
+  // Some credentials must not depend on the system that holds them. Moving one
+  // out of the vault is a downgrade in convenience and an upgrade in the only
+  // property that matters for a recovery path: no shared dependency.
+  function vaultOffboard(id){
+    var a = vAcc(id), s = a._safe;
+    openModal('Move out of the vault \u2014 ' + a.name,
+      '<p>The credential leaves the vault and is sealed offline: printed, sealed, and held in the physical safe with the seal as the tamper evidence.</p>' +
+      '<p class="hint">This is worse in every way except one. It has no dependency on sign-in, on the network, or on the vault itself \u2014 which is the entire reason an emergency credential exists.</p>' +
+      '<label class="check"><input type="checkbox" id="vf-r" checked> Rotate it on the way out, since the vault has held it</label>' +
+      '<label class="fld" for="vf-w">Where it is going</label><input class="in" id="vf-w" value="Sealed envelope, IT safe, reception floor">',
+      'Move out and seal', function(){
+        var rot = document.getElementById('vf-r').checked, w = document.getElementById('vf-w').value.trim();
+        if(w.length < 4) return false;
+        act('Move credential out of the vault', a.name, function(){
+          s.accounts = (s.accounts||[]).filter(function(x){ return x.id!==id; });
+          var v = vault(); v.sealed = (v.sealed||[]).concat([{id:a.id, name:a.name, where:w, rotated:rot, at:stamp()}]);
+          if(rot) a.rotated = true;
+          v.rotatedOut = v.rotatedOut || {}; if(rot) v.rotatedOut[a.id] = true;
+          vLog({t:stamp(), who:'ia.analyst', account:a.name, action:'Moved out of the vault',
+                detail:w + '. ' + (rot ? 'Rotated on the way out.' : 'NOT rotated \u2014 the password the vault held is still valid.')});
+        }, a.name + ' sealed offline', {cat:'Security', detail:a.name + ' removed from ' + s.name + ' and sealed at: ' + w + '. ' + (rot ? 'Rotated on removal.' : 'Not rotated.')});
+      });
+  }
+  function vaultRecording(rid){
+    openModal('Session recording ' + rid,
+      '<p class="hint">A recording is the difference between knowing who took a credential and knowing what they did with it.</p>' +
+      '<div class="term"><div>Connected as MERIDIAN\\adm.northbeam to MF-DC01</div><div class="faint">14 minutes 22 seconds \u00b7 keystrokes and screen</div><div>&gt; Get-Service -Name \'MF-Dock*\'</div><div>&gt; Restart-Service -Name MF-DockRelay</div><div>&gt; Get-EventLog -LogName Application -Newest 20</div><div class="faint">\u2026 session ended by check-in</div></div>',
+      null);
+  }
+
+  // ---- governance reporting ---------------------------------------------
+  // Every other page in this console is an operational list. This one is the
+  // only page that answers "how are we doing", and it is computed live from the
+  // same state the rest of the console edits — so a number here moves the
+  // moment you fix the thing behind it. Forms are chosen by the data's job:
+  // single values are stat tiles, a ratio against a target is a meter, and
+  // counts are one-hue bars. There is no categorical palette on this page.
+  function pct(n, d){ return d ? Math.round((n / d) * 100) : 0; }
+  function isStale(u){ return onPrem(u) && !/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)/.test(u.ad.lastLogon || ''); }
+  function peopleAccounts(){ return allUsers().filter(function(u){ return u.status!=='Not created' && !u.service && !u.shared && u.dept!=='External'; }); }
+  function methodKey(s){
+    if(/sms|text message/i.test(s)) return 'sms';
+    if(/voice|phone call/i.test(s)) return 'voice';
+    if(/push/i.test(s)) return 'app';
+    if(/code|totp|one-time/i.test(s)) return 'totp';
+    if(/fido|security key|hardware key|passkey/i.test(s)) return 'fido';
+    if(/certificate/i.test(s)) return 'cba';
+    if(/hello/i.test(s)) return 'hello';
+    if(/temporary access|\btap\b/i.test(s)) return 'tap';
+    return 'other';
+  }
+  var PHISH_OK = {fido:1, cba:1, hello:1};
+  var WEAK_M = {sms:1, voice:1};
+  function phishResistant(u){ return (u.mfa||[]).some(function(m){ return !!PHISH_OK[methodKey(m)]; }); }
+  var METHOD_LABEL = {sms:'SMS text message', voice:'Voice call', app:'Authenticator app \u2014 push',
+    totp:'Authenticator app \u2014 code', fido:'Security key or passkey', cba:'Certificate-based',
+    hello:'Windows Hello', tap:'Temporary Access Pass', other:'Other'};
+  // Counted off the directory, not off a number written in the scenario file.
+  function methodCounts(users){
+    var seen = {}, order = [];
+    users.forEach(function(u){
+      var mine = {};
+      (u.mfa||[]).forEach(function(m){
+        var k = methodKey(m);
+        if(mine[k]) return; mine[k] = 1;
+        if(seen[k]==null){ seen[k] = 0; order.push(k); }
+        seen[k]++;
+      });
+    });
+    var a = am();
+    if(a) a.methods.forEach(function(m){ if(seen[m.id]==null){ seen[m.id] = 0; order.push(m.id); } });
+    return order.map(function(k){
+      var m = a ? a.methods.filter(function(x){ return x.id===k; })[0] : null;
+      return {label:(m ? m.name : METHOD_LABEL[k] || k), n:seen[k],
+              flag: (m ? m.weak : WEAK_M[k]) ? 'Interceptable' : (m ? m.phishResistant : PHISH_OK[k]) ? 'Phishing-resistant' : '',
+              tone: (m ? m.weak : WEAK_M[k]) ? 'warn' : 'ok'};
+    }).sort(function(p1,p2){ return p2.n - p1.n; });
+  }
+  function statTile(label, value, note, tone){
+    return '<div class="stat' + (tone ? ' ' + tone : '') + '"><dt>' + esc(label) + '</dt><dd>' + esc(String(value)) + '</dd>' +
+      (note ? '<p>' + esc(note) + '</p>' : '') + '</div>';
+  }
+  // A ratio against a target. The fill carries severity; the unfilled track is a
+  // lighter step of the same ramp so the state reads across the whole bar.
+  function meter(label, n, d, target, hint){
+    var p = pct(n, d), tone = p >= target ? 'ok' : p >= target * 0.6 ? 'warn' : 'bad';
+    var word = tone==='ok' ? 'At target' : tone==='warn' ? 'Below target' : 'Well below target';
+    return '<div class="mtr"><div class="mtr-h"><span class="mtr-l">' + esc(label) + '</span>' +
+      '<span class="mtr-v"><b>' + p + '%</b> <span class="faint">' + n + ' of ' + d + '</span></span></div>' +
+      '<div class="mtr-t" role="img" aria-label="' + esc(label + ': ' + p + ' per cent of ' + d + ', target ' + target + ' per cent, ' + word) + '">' +
+      '<i class="mtr-f ' + tone + '" style="width:' + Math.max(p, 1.5) + '%"></i>' +
+      '<u class="mtr-g" style="left:' + target + '%" title="Target ' + target + '%"></u></div>' +
+      '<p class="mtr-n"><span class="sdot ' + tone + '" aria-hidden="true"></span>' + esc(word) + ' \u00b7 target ' + target + '%. ' + esc(hint || '') + '</p></div>';
+  }
+  // Magnitude, low to high: one hue, 4px rounded data-end, a 2px surface gap
+  // between neighbours, values at the tip. No legend — there is one series.
+  function barRows(rows, unit){
+    var max = Math.max.apply(null, rows.map(function(r){ return r.n; }).concat([1]));
+    return '<div class="bars">' + rows.map(function(r){
+      return '<div class="bar-r"><span class="bar-l">' + esc(r.label) +
+        (r.flag ? ' <span class="sdot ' + (r.tone||'warn') + '" aria-hidden="true"></span><span class="bar-flag">' + esc(r.flag) + '</span>' : '') + '</span>' +
+        '<span class="bar-w"><i style="width:' + Math.max((r.n / max) * 100, r.n ? 2 : 0) + '%"></i></span>' +
+        '<span class="bar-v">' + r.n + (unit ? ' ' + esc(unit) : '') + '</span></div>';
+    }).join('') + '</div>';
+  }
+  function pReport(){
+    var people = peopleAccounts();
+    var enabled = people.filter(function(u){ return u.status==='Enabled'; });
+    var withMfa = enabled.filter(function(u){ return (u.mfa||[]).length; });
+    var withPhish = enabled.filter(phishResistant);
+    var noMgr = enabled.filter(function(u){ return !u.mgr; });
+    var stale = allUsers().filter(function(u){ return u.status==='Enabled' && isStale(u); });
+    var disabledLicensed = allUsers().filter(function(u){ return u.status==='Disabled' && hasLic(u); });
+    var standing = allUsers().filter(function(u){ return (u.roles||[]).some(function(r){ return r.type==='active'; }); });
+    var eligible = allUsers().filter(function(u){ return (u.roles||[]).some(function(r){ return r.type==='eligible'; }); });
+    var svc = allUsers().filter(function(u){ return u.service || u.shared; });
+
+    // the headline: one hero figure per view
+    var cov = pct(withMfa.length, enabled.length);
+
+    var tiles = [
+      statTile('Enabled accounts', enabled.length, 'People, excluding service and shared accounts'),
+      statTile('No manager on record', noMgr.length, noMgr.length ? 'Nobody to ask at the next access review' : 'Every account has an owner', noMgr.length ? 'warn' : 'ok'),
+      statTile('No sign-in in 90 days', stale.length, stale.length ? 'Enabled, unused, still granting what it grants' : 'Nothing dormant', stale.length ? 'warn' : 'ok'),
+      statTile('Disabled but still licensed', disabledLicensed.length, disabledLicensed.length ? 'Paid seats on accounts nobody uses' : 'No wasted seats', disabledLicensed.length ? 'bad' : 'ok'),
+      statTile('Standing admin roles', standing.length, standing.length ? 'Held permanently, including at 2am' : 'All privileged access is activated on demand', standing.length > 2 ? 'bad' : standing.length ? 'warn' : 'ok'),
+      statTile('Eligible, not standing', eligible.length, 'Activated when needed, with a reason recorded'),
+      statTile('Service and shared accounts', svc.length, 'No person behind them; they need named owners')
+    ];
+    var x = ext(), k = pkgs(), a = am();
+    if(x){
+      var live = (x.guests||[]).filter(function(g){ return !g.removed; });
+      tiles.push(statTile('Guests with no sponsor', live.filter(function(g){ return !g.sponsor; }).length, 'Nobody inside the company is asked whether they still need to be here', live.some(function(g){ return !g.sponsor; }) ? 'bad' : 'ok'));
+      tiles.push(statTile('Guest access that never expires', live.filter(function(g){ return !g.expires; }).length, 'No HR feed will ever tell you they left', live.some(function(g){ return !g.expires; }) ? 'warn' : 'ok'));
+    }
+    if(k) tiles.push(statTile('Access packages with no end date', (k.items||[]).filter(function(q){ return !q.expiry; }).length, 'An approval once, then access for ever', (k.items||[]).some(function(q){ return !q.expiry; }) ? 'warn' : 'ok'));
+
+    // methods: magnitude, one hue, with a status flag on the interceptable ones
+    var methodBars = methodCounts(enabled);
+
+    // privileged groups, largest first
+    var privBars = D.groups.filter(function(g){ return g.tier && g.tier!=='standard'; })
+      .map(function(g){ return {label:g.name, n:members(g.name).length, flag:g.tier, tone:g.tier==='privileged' ? 'bad' : 'warn'}; })
+      .sort(function(p1,p2){ return p2.n - p1.n; });
+
+    var staleRows = stale.concat(disabledLicensed.filter(function(u){ return stale.indexOf(u)<0; })).slice(0, 10).map(function(u){
+      return '<tr class="click" data-user="' + esc(u.upn) + '"><td><b>' + esc(u.name) + '</b><div class="mono faint" style="font-size:12.5px">' + esc(mail(u.upn)) + '</div></td>' +
+        '<td>' + esc(u.title || '') + '</td><td>' + (u.status==='Enabled' ? '<span class="pill en">Enabled</span>' : '<span class="pill dis">Disabled</span>') + '</td>' +
+        '<td class="mono faint">' + esc(onPrem(u) ? (u.ad.lastLogon || '—') : '—') + '</td>' +
+        '<td>' + (hasLic(u) ? esc(u.lic) : '<span class="faint">none</span>') + '</td></tr>';
+    }).join('');
+
+    return '<h1 class="pg">Reporting</h1><p class="sub">Computed from the directory as it stands right now. Fix something and the number moves \u2014 these are the same objects every other page edits.</p>' +
+      '<div class="hero"><div class="hero-n">' + cov + '<span>%</span></div>' +
+      '<div class="hero-t"><b>of enabled accounts have any second factor</b>' +
+      '<span>' + withMfa.length + ' of ' + enabled.length + '. ' + withPhish.length + ' of them hold something a copied sign-in page cannot use at all.</span></div></div>' +
+      card('Coverage', '', '<div class="card-b">' +
+        meter('Any second factor', withMfa.length, enabled.length, 100, 'Everyone, no exceptions that are not break-glass.') +
+        meter('Phishing-resistant method', withPhish.length, enabled.length, 60, 'A key or a certificate, not a code that can be relayed.') +
+        meter('Privileged access activated, not standing', eligible.length, Math.max(eligible.length + standing.length, 1), 100, 'Standing roles are held at 2am whether you are working or not.') +
+        '</div>') +
+      '<dl class="stats">' + tiles.join('') + '</dl>' +
+      (methodBars.length ? card('Registered authentication methods', '<span class="faint" style="font-size:12.5px">Counted across ' + enabled.length + ' enabled accounts \u00b7 people may hold more than one</span>', '<div class="card-b">' + barRows(methodBars, '') + '</div>') : '') +
+      (privBars.length ? card('Members of privileged and sensitive groups', '', '<div class="card-b">' + barRows(privBars, '') + '</div>') : '') +
+      (staleRows ? card('Accounts worth looking at', '<span class="faint" style="font-size:12.5px">Dormant, or disabled and still paying for a seat</span>',
+        table(['Account','Role','State','Last sign-in','Licence'], staleRows, '')) : '') +
+      '<p class="hint">None of these numbers are a score. They are the questions an auditor asks in the order they ask them, and every one of them has a named person behind it.</p>';
+  }
+
+  // ---- authentication methods ------------------------------------------
+  // Two separate questions get muddled here. Which methods may be used to prove
+  // who you are, and which may be used to get back in when you cannot. A method
+  // that can be intercepted or talked out of somebody is weak for the first and
+  // catastrophic for the second, because it hands over the recovery path.
+  function am(){ if(!S.am && D.authMethods) S.am = JSON.parse(JSON.stringify(D.authMethods)); return S.am; }
+  function amBy(id){ var a = am(); if(!a) return null; for(var i=0;i<a.methods.length;i++){ if(a.methods[i].id===id) return a.methods[i]; } return null; }
+  function amScopeLabel(m){
+    if(m.state!=='Enabled') return 'Disabled';
+    if(m.scope==='all') return 'All users';
+    if(m.scope==='none') return 'Nobody';
+    return m.scope;
+  }
+  function pAuthM(){
+    var a = am();
+    if(!a) return '<h1 class="pg">Authentication methods</h1><div class="card"><div class="card-b faint">Not configured in this shift.</div></div>';
+    var rows = a.methods.map(function(m){
+      return '<tr><td><b>' + esc(m.name) + '</b><div class="faint" style="font-size:12.5px">' + esc(m.note||'') + '</div></td>' +
+        '<td>' + (m.phishResistant ? '<span class="pill en">Phishing-resistant</span>' : m.weak ? '<span class="pill warn">Interceptable</span>' : '<span class="faint">Standard</span>') + '</td>' +
+        '<td>' + (m.state==='Enabled' ? '<span class="pill en">Enabled</span>' : '<span class="pill dis">Disabled</span>') + '</td>' +
+        '<td>' + esc(amScopeLabel(m)) + '</td>' +
+        '<td class="mono faint">' + (m.registered==null ? '—' : m.registered) + '</td>' +
+        '<td><button class="btn sec sm" data-amedit="' + m.id + '" type="button">Change</button></td></tr>';
+    }).join('');
+    var s = a.sspr || {};
+    var weakInSspr = (s.allowed||[]).filter(function(id){ var m = amBy(id); return m && m.weak; });
+    var reg = (a.registrations||[]).map(function(r, i){
+      return '<tr><td>' + esc(r.who) + '</td><td>' + esc(r.method) + '</td><td class="mono nowrap">' + esc(r.when) + '</td>' +
+        '<td>' + esc(r.loc||'') + '<div class="mono faint">' + esc(r.ip||'') + '</div></td>' +
+        '<td>' + (r.flag ? '<span class="res bad">' + esc(r.flag) + '</span>' : '<span class="faint">—</span>') + '</td>' +
+        '<td>' + (r.handled ? '<span class="pill en">' + esc(r.handled) + '</span>' : (r.flag ? '<button class="btn danger sm" data-amreg="' + i + '" type="button">Investigate</button>' : '')) + '</td></tr>';
+    }).join('');
+    return '<h1 class="pg">Authentication methods</h1><p class="sub">What people may use to prove who they are, and what they may use to get back in when they cannot.</p>' +
+      card('Methods', '', table(['Method','Strength','State','Available to','Registered',''], rows, '')) +
+      card('Self-service password reset', '<button class="btn sm" data-sspr="1" type="button">Configure</button>',
+        '<div class="card-b"><dl class="kv sm">' +
+        '<dt>Enabled for</dt><dd>' + (s.scope==='all' ? 'All users' : s.scope==='group' ? esc(s.group||'a group') : '<span style="color:var(--warn);font-weight:600">Nobody — every reset goes through the service desk</span>') + '</dd>' +
+        '<dt>Methods required to reset</dt><dd>' + (s.required===2 ? 'Two' : '<span style="color:var(--warn);font-weight:600">One</span>') + '</dd>' +
+        '<dt>Permitted for reset</dt><dd class="mono">' + esc((s.allowed||[]).map(function(id){ var m = amBy(id); return m ? m.name : id; }).join(', ') || 'none') + '</dd>' +
+        '</dl>' + (weakInSspr.length ? '<div class="banner warn"><span>' + esc(weakInSspr.map(function(id){ return amBy(id).name; }).join(' and ')) + ' can reset a password on its own. Anyone who can take over a phone number can take over the account.</span></div>' : '') + '</div>') +
+      card('Registration campaign', '<button class="btn sm" data-amcamp="1" type="button">Configure</button>',
+        '<div class="card-b"><dl class="kv sm"><dt>State</dt><dd>' + ((s.campaign||{}).on ? '<span class="pill en">On</span> — users are prompted at sign-in' : '<span class="pill dis">Off</span>') + '</dd>' +
+        '<dt>Prompting for</dt><dd>' + esc(((s.campaign||{}).method && amBy(s.campaign.method) ? amBy(s.campaign.method).name : 'nothing')) + '</dd>' +
+        '<dt>Snooze limit</dt><dd>' + ((s.campaign||{}).snooze!=null ? esc(String(s.campaign.snooze)) + ' times' : '—') + '</dd></dl>' +
+        '<p class="hint">Turning a strong method on does not register anybody on it. Without a campaign, the people who adopt it are the ones who already would have.</p></div>') +
+      ((a.registrations||[]).length ? card('Recent method registrations', '', table(['User','Method','When','Where','','' ], reg, '')) : '');
+  }
+  function amEdit(id){
+    var m = amBy(id), groups = D.groups.map(function(g){ return g.name; });
+    openModal(m.name,
+      '<p class="hint">' + esc(m.note||'') + '</p>' +
+      (m.weak ? '<div class="banner warn"><span>This method can be intercepted without touching the user\u2019s device \u2014 a number can be ported, a message can be read on a locked screen, and a person can be talked into reading a code out loud.</span></div>' : '') +
+      (m.phishResistant ? '<div class="banner ok"><span>This method is bound to the site it was registered for. A convincing copy of the sign-in page cannot use it, because the copy is not the same origin.</span></div>' : '') +
+      '<label class="fld" for="am-s">State</label><select class="in" id="am-s"><option value="Enabled"' + (m.state==='Enabled'?' selected':'') + '>Enabled</option><option value="Disabled"' + (m.state!=='Enabled'?' selected':'') + '>Disabled</option></select>' +
+      '<label class="fld" for="am-c">Available to</label><select class="in" id="am-c"><option value="all"' + (m.scope==='all'?' selected':'') + '>All users</option>' +
+        groups.map(function(g){ return '<option value="' + esc(g) + '"' + (m.scope===g?' selected':'') + '>' + esc(g) + '</option>'; }).join('') +
+        '<option value="none"' + (m.scope==='none'?' selected':'') + '>Nobody</option></select>',
+      'Save', function(){
+        var st = document.getElementById('am-s').value, sc = document.getElementById('am-c').value;
+        act('Update authentication method', m.name, function(){ m.state = st; m.scope = sc; },
+          m.name + ' updated', {cat:'Authentication', detail:m.name + ' · ' + st + ', available to ' + (sc==='all'?'all users':sc==='none'?'nobody':sc) + '.'});
+      });
+  }
+  function ssprEdit(){
+    var a = am(), s = a.sspr = a.sspr || {}, groups = D.groups.map(function(g){ return g.name; });
+    var opts = a.methods.map(function(m){
+      return '<label class="check"><input type="checkbox" class="sp-m" value="' + m.id + '"' + ((s.allowed||[]).indexOf(m.id)>=0?' checked':'') + '> ' + esc(m.name) + (m.weak ? ' <span class="pill warn">interceptable</span>' : m.phishResistant ? ' <span class="pill en">phishing-resistant</span>' : '') + '</label>';
+    }).join('');
+    openModal('Self-service password reset',
+      '<p class="hint">Reset is the recovery path for everything else. Whatever is good enough here is good enough to take over any account, because it is what the attacker will use.</p>' +
+      '<label class="fld" for="sp-s">Enabled for</label><select class="in" id="sp-s"><option value="none"' + (s.scope==='none'||!s.scope?' selected':'') + '>Nobody</option><option value="all"' + (s.scope==='all'?' selected':'') + '>All users</option>' +
+        groups.map(function(g){ return '<option value="' + esc(g) + '"' + (s.scope===g?' selected':'') + '>' + esc(g) + ' only</option>'; }).join('') + '</select>' +
+      '<label class="fld" for="sp-r">Methods required to reset</label><select class="in" id="sp-r"><option value="1"' + (s.required!==2?' selected':'') + '>One</option><option value="2"' + (s.required===2?' selected':'') + '>Two</option></select>' +
+      '<label class="fld">Permitted for reset</label>' + opts,
+      'Save', function(){
+        var sc = document.getElementById('sp-s').value, rq = +document.getElementById('sp-r').value;
+        var allowed = [].slice.call(modalEl.querySelectorAll('.sp-m')).filter(function(x){ return x.checked; }).map(function(x){ return x.value; });
+        act('Update self-service password reset', 'Tenant', function(){ s.scope = sc; s.required = rq; s.allowed = allowed; },
+          'Self-service reset updated', {cat:'Authentication', detail:'Enabled for ' + (sc==='none'?'nobody':sc) + ' · ' + rq + ' method(s) required · permitted: ' + allowed.join(', ') + '.'});
+      });
+  }
+  function amCampaign(){
+    var a = am(), s = a.sspr = a.sspr || {}, c = s.campaign = s.campaign || {};
+    openModal('Registration campaign',
+      '<p class="hint">A campaign interrupts sign-in and asks people to register the method you want them on. It is the only thing that moves the people who would otherwise never get round to it.</p>' +
+      '<label class="fld" for="rc-o">State</label><select class="in" id="rc-o"><option value="off"' + (c.on?'':' selected') + '>Off</option><option value="on"' + (c.on?' selected':'') + '>On</option></select>' +
+      '<label class="fld" for="rc-m">Prompt users to register</label><select class="in" id="rc-m">' +
+        a.methods.filter(function(m){ return m.state==='Enabled'; }).map(function(m){ return '<option value="' + m.id + '"' + (c.method===m.id?' selected':'') + '>' + esc(m.name) + '</option>'; }).join('') + '</select>' +
+      '<label class="fld" for="rc-s">Times a user may snooze</label><select class="in" id="rc-s"><option value="0">0 — must register now</option><option value="3" selected>3</option><option value="14">14</option></select>',
+      'Save', function(){
+        var on = document.getElementById('rc-o').value==='on', me = document.getElementById('rc-m').value, sn = +document.getElementById('rc-s').value;
+        act('Update registration campaign', 'Tenant', function(){ c.on = on; c.method = me; c.snooze = sn; },
+          on ? 'Registration campaign on' : 'Registration campaign off',
+          {cat:'Authentication', detail:'Campaign ' + (on?'on':'off') + (on ? ' · prompting for ' + (amBy(me)||{}).name + ' · ' + sn + ' snoozes allowed' : '') + '.'});
+      });
+  }
+  function amRegAction(i){
+    var a = am(), r = a.registrations[i];
+    openModal('Method registration — ' + r.who,
+      '<dl class="kv sm"><dt>Method</dt><dd>' + esc(r.method) + '</dd><dt>When</dt><dd class="mono">' + esc(r.when) + '</dd><dt>Where</dt><dd>' + esc(r.loc||'') + ' <span class="mono faint">' + esc(r.ip||'') + '</span></dd></dl>' +
+      (r.flag ? '<div class="banner bad"><span>' + esc(r.flag) + '</span></div>' : '') +
+      '<p class="hint">Registering a new way to sign in is how an account takeover is made permanent: the password can be reset afterwards and the attacker still gets in. Treat an unexpected registration as a compromise, not as a user doing something odd.</p>' +
+      '<label class="fld" for="ar-a">Action</label><select class="in" id="ar-a"><option value="removed">Remove the method and revoke the user\u2019s sessions</option><option value="accepted">Accept it \u2014 the user confirmed they did this</option></select>',
+      'Apply', function(){
+        var v = document.getElementById('ar-a').value;
+        act('Action method registration', r.who, function(){ r.handled = v==='removed' ? 'Removed' : 'Accepted'; },
+          v==='removed' ? 'Method removed and sessions revoked' : 'Registration accepted',
+          {cat:'Authentication', detail:r.who + ' · ' + r.method + ' registered ' + r.when + ' from ' + (r.loc||'') + '. ' + (v==='removed' ? 'Method removed and all sessions revoked.' : 'Accepted as legitimate.')});
+      });
+  }
+
+  // ---- external identities --------------------------------------------
+  // A guest is somebody else's employee with a seat in your directory. Nobody
+  // inside the company owns them, nothing tells you when they leave the company
+  // that does, and the only two controls that survive contact with reality are
+  // a named sponsor and an expiry date.
+  function ext(){ if(!S.ext && D.external) S.ext = JSON.parse(JSON.stringify(D.external)); return S.ext; }
+  function guestBy(id){ var x = ext(); if(!x) return null; for(var i=0;i<x.guests.length;i++){ if(x.guests[i].id===id) return x.guests[i]; } return null; }
+  function guestState(g){
+    if(g.removed) return '<span class="pill dis">Removed</span>';
+    if(!g.redeemed) return '<span class="pill warn">Invited, never redeemed</span>';
+    if(g.lastSignIn==='never') return '<span class="pill warn">Redeemed, never signed in</span>';
+    return '<span class="pill en">Active</span>';
+  }
+  function pExt(){
+    var x = ext();
+    if(!x) return '<h1 class="pg">External identities</h1><div class="card"><div class="card-b faint">No external identities in this shift.</div></div>';
+    var live = x.guests.filter(function(g){ return !g.removed; });
+    var rows = live.map(function(g){
+      var acts = '<div class="row" style="gap:6px">' +
+        '<button class="btn sec sm" data-gsponsor="' + g.id + '" type="button">Sponsor</button>' +
+        '<button class="btn sec sm" data-gexp="' + g.id + '" type="button">Expiry</button>' +
+        '<button class="btn danger sm" data-grm="' + g.id + '" type="button">Remove</button></div>';
+      return '<tr><td><b>' + esc(g.name) + '</b><div class="mono faint" style="font-size:12.5px">' + esc(g.email) + '</div></td>' +
+        '<td>' + esc(g.org||g.email.split('@')[1]) + '</td>' +
+        '<td>' + (g.sponsor ? esc(pname(g.sponsor)) : '<span class="res bad">None</span>') + '</td>' +
+        '<td>' + (g.expires ? esc(g.expires) : '<span style="color:var(--warn);font-weight:600">Never</span>') + '</td>' +
+        '<td class="mono faint nowrap">' + esc(g.lastSignIn||'—') + '</td>' +
+        '<td>' + guestState(g) + '</td>' +
+        '<td>' + ((g.groups||[]).length ? (g.groups||[]).map(function(gr){ var t = G(gr); return '<span class="tb" style="margin:0 4px 4px 0">' + esc(gr) + (t && t.tier && t.tier!=='standard' ? ' · ' + esc(t.tier) : '') + ' <button class="link" data-grmg="' + g.id + '|' + esc(gr) + '" type="button" aria-label="Remove from ' + esc(gr) + '">remove</button></span>'; }).join('') : '<span class="faint">—</span>') + '</td>' +
+        '<td>' + acts + '</td></tr>';
+    }).join('');
+    var c = x.collab || {};
+    var risky = [];
+    if(c.mode !== 'allow-list') risky.push('Anybody with an address at any domain can be invited.');
+    if(c.guestPerms !== 'limited') risky.push('Guests can read the full directory — every user, group and membership.');
+    if(c.whoCanInvite !== 'admins') risky.push('Any member can invite a guest, with no approval and no record of why.');
+    return '<h1 class="pg">External identities</h1><p class="sub">People from partner and supplier organisations with an identity in this tenant. ' + live.length + ' active.</p>' +
+      card('Collaboration settings', '<button class="btn sm" data-collab="1" type="button">Change</button>',
+        '<div class="card-b"><dl class="kv sm">' +
+        '<dt>Who can invite</dt><dd>' + (c.whoCanInvite==='admins' ? 'Administrators only' : '<span style="color:var(--warn);font-weight:600">Any member</span>') + '</dd>' +
+        '<dt>Permitted domains</dt><dd>' + (c.mode==='allow-list' ? '<span class="mono">' + esc((c.allow||[]).join(', ') || 'none') + '</span>' : '<span style="color:var(--warn);font-weight:600">Any domain</span>') + '</dd>' +
+        '<dt>Guest directory access</dt><dd>' + (c.guestPerms==='limited' ? 'Limited — own profile and members they work with' : '<span style="color:var(--warn);font-weight:600">Same as members — full directory</span>') + '</dd>' +
+        '</dl>' + (risky.length ? '<ul class="feed">' + risky.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' : '') + '</div>') +
+      card('Guests', '', table(['Guest','Organisation','Sponsor','Expires','Last sign-in','Status','Groups',''], rows, 'No guests.'));
+  }
+  function guestSponsor(id){
+    var g = guestBy(id), cands = allUsers().filter(function(u){ return u.status==='Enabled' && !u.service && !u.shared && u.dept!=='External'; });
+    openModal('Sponsor — ' + g.name,
+      '<p class="hint">A sponsor is the person inside the company who will be asked, at every review, whether this guest still needs to be here. Without one the question has nobody to go to and the answer defaults to yes.</p>' +
+      '<label class="fld" for="gs-u">Sponsor</label><select class="in" id="gs-u">' + cands.map(function(u){ return '<option value="' + esc(u.upn) + '"' + (g.sponsor===u.upn?' selected':'') + '>' + esc(u.name) + ' — ' + esc(u.title) + '</option>'; }).join('') + '</select>',
+      'Save', function(){
+        var v = document.getElementById('gs-u').value;
+        act('Set guest sponsor', g.name, function(){ g.sponsor = v; }, 'Sponsor set', {cat:'User management', detail:'Guest ' + g.email + ' sponsored by ' + pname(v) + '.'});
+      });
+  }
+  function guestExpiry(id){
+    var g = guestBy(id);
+    openModal('Access expiry — ' + g.name,
+      '<p class="hint">Guest access that never expires is a standing invitation held by somebody else\u2019s employee, in somebody else\u2019s HR system, that you will never be told about.</p>' +
+      '<label class="fld" for="ge-d">Access expires</label><select class="in" id="ge-d"><option value="">Never</option>' +
+        (D.guestExpiryOptions||['in 30 days','in 90 days','in 180 days']).map(function(o){ return '<option value="' + esc(o) + '"' + (g.expires===o?' selected':'') + '>' + esc(o) + '</option>'; }).join('') + '</select>',
+      'Save', function(){
+        var v = document.getElementById('ge-d').value;
+        act('Set guest access expiry', g.name, function(){ g.expires = v; }, v ? 'Expiry set' : 'Expiry cleared',
+          {cat:'User management', detail:'Guest ' + g.email + ' · access expires ' + (v||'never') + '.'});
+      });
+  }
+  function guestRemove(id){
+    var g = guestBy(id);
+    openModal('Remove guest — ' + g.name,
+      '<p>This removes <span class="mono">' + esc(g.email) + '</span> from the tenant along with every group membership and application assignment it carries.</p>' +
+      '<p class="hint">Their account at ' + esc(g.org||g.email.split('@')[1]) + ' is unaffected \u2014 it was never ours. Only the seat here goes.</p>' +
+      '<label class="fld" for="gr-w">Reason</label><input class="in" id="gr-w" placeholder="e.g. contract ended, never redeemed, no sponsor">',
+      'Remove', function(){
+        var w = document.getElementById('gr-w').value.trim(); if(w.length<3) return false;
+        act('Remove guest', g.name, function(){ g.removed = true; g.removedWhy = w; }, g.name + ' removed',
+          {cat:'User management', detail:'Guest ' + g.email + ' removed from the tenant. ' + w});
+      }, null, true);
+  }
+  function guestGroupRemove(id, grp){
+    var g = guestBy(id), t = G(grp);
+    openModal('Remove ' + g.name + ' from ' + grp,
+      '<p>' + esc(g.name) + ' is an external identity at <b>' + esc(g.org||'') + '</b> and <span class="mono">' + esc(grp) + '</span> is an internal group' + (t && t.tier && t.tier!=='standard' ? ' at the <b>' + esc(t.tier) + '</b> tier' : '') + '.</p>' +
+      '<p class="hint">A guest is a member like any other, which is how this happened: a group owner added them. Everything that group is granted now, and everything it is granted later, goes to them too.</p>',
+      'Remove from group', function(){
+        act('Remove guest from group', g.name, function(){ g.groups = (g.groups||[]).filter(function(x){ return x!==grp; }); },
+          g.name + ' removed from ' + grp, {cat:'Group management', detail:'External identity ' + g.email + ' removed from ' + grp + '.'});
+      }, null, true);
+  }
+  function collabEdit(){
+    var x = ext(), c = x.collab = x.collab || {};
+    openModal('Collaboration settings',
+      '<p class="hint">These three settings decide who can appear in your directory without anybody approving it, and what they can read once they are here.</p>' +
+      '<label class="fld" for="cb-w">Who can invite guests</label><select class="in" id="cb-w"><option value="members"' + (c.whoCanInvite!=='admins'?' selected':'') + '>Any member</option><option value="admins"' + (c.whoCanInvite==='admins'?' selected':'') + '>Administrators only</option></select>' +
+      '<label class="fld" for="cb-m">Permitted domains</label><select class="in" id="cb-m"><option value="any"' + (c.mode!=='allow-list'?' selected':'') + '>Any domain</option><option value="allow-list"' + (c.mode==='allow-list'?' selected':'') + '>Allow list only</option></select>' +
+      '<label class="fld" for="cb-a">Allow list</label><input class="in mono" id="cb-a" value="' + esc((c.allow||[]).join(', ')) + '" placeholder="northbeam.example, coastaldrayage.example">' +
+      '<label class="fld" for="cb-p">Guest directory access</label><select class="in" id="cb-p"><option value="same"' + (c.guestPerms!=='limited'?' selected':'') + '>Same as members</option><option value="limited"' + (c.guestPerms==='limited'?' selected':'') + '>Limited</option></select>',
+      'Save', function(){
+        var w = document.getElementById('cb-w').value, m = document.getElementById('cb-m').value,
+            a = document.getElementById('cb-a').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+            gp = document.getElementById('cb-p').value;
+        act('Update collaboration settings', 'Tenant', function(){ c.whoCanInvite = w; c.mode = m; c.allow = a; c.guestPerms = gp; },
+          'Collaboration settings updated', {cat:'Security', detail:'Invites: ' + (w==='admins'?'administrators only':'any member') + ' · domains: ' + (m==='allow-list'? a.join(', ') : 'any') + ' · guest directory access: ' + (gp==='limited'?'limited':'same as members') + '.'});
+      });
+  }
+
+  // ---- access packages --------------------------------------------------
+  // An access package is a request that carries its own approver and its own
+  // end date. Without the second one it is just a slower way of making access
+  // permanent.
+  function pkgs(){ if(!S.pkg && D.packages) S.pkg = JSON.parse(JSON.stringify(D.packages)); return S.pkg; }
+  function pkgBy(id){ var k = pkgs(); if(!k) return null; for(var i=0;i<k.items.length;i++){ if(k.items[i].id===id) return k.items[i]; } return null; }
+  function pPkg(){
+    var k = pkgs();
+    if(!k) return '<h1 class="pg">Access packages</h1><div class="card"><div class="card-b faint">No catalog in this shift.</div></div>';
+    var cards = k.items.map(function(p){
+      var reqs = (p.requests||[]).map(function(r){
+        return '<tr><td>' + esc(r.who) + '<div class="mono faint" style="font-size:12.5px">' + esc(r.email||'') + '</div></td>' +
+          '<td class="faint">' + esc(r.when) + '</td><td>' + esc(r.why||'') + '</td>' +
+          '<td>' + (r.decision ? '<span class="pill ' + (r.decision==='approved'?'en':'dis') + '">' + esc(r.decision) + '</span>' : '<div class="row" style="gap:6px"><button class="btn sm" data-preq="' + p.id + '|' + r.id + '|approved" type="button">Approve</button><button class="btn danger sm" data-preq="' + p.id + '|' + r.id + '|denied" type="button">Deny</button></div>') + '</td></tr>';
+      }).join('');
+      return card(esc(p.name), '<button class="btn sm" data-ppol="' + p.id + '" type="button">Policy</button>',
+        '<div class="card-b"><dl class="kv sm">' +
+        '<dt>Grants</dt><dd class="mono">' + esc((p.resources||[]).join(', ')) + '</dd>' +
+        '<dt>Who can request</dt><dd>' + (p.scope==='partners' ? 'Users from the permitted partner domains' : p.scope==='internal' ? 'Employees only' : '<span style="color:var(--warn);font-weight:600">Anyone, including guests from any domain</span>') + '</dd>' +
+        '<dt>Approver</dt><dd>' + (p.approver ? esc(pname(p.approver)) : '<span class="res bad">None \u2014 requests are granted automatically</span>') + '</dd>' +
+        '<dt>Access expires</dt><dd>' + (p.expiry ? esc(p.expiry) : '<span style="color:var(--warn);font-weight:600">Never</span>') + '</dd>' +
+        '<dt>Currently assigned</dt><dd>' + ((p.assigned||[]).length) + (p.stale ? ' <span class="pill warn">' + p.stale + ' have not used it in 90 days</span>' : '') + '</dd>' +
+        '</dl></div>' + ((p.requests||[]).length ? table(['Requester','When','Reason',''], reqs, '') : ''));
+    }).join('');
+    return '<h1 class="pg">Access packages</h1><p class="sub">' + esc(k.catalog) + ' · a package is a bundle of groups, applications and roles that somebody can ask for, with an approver and an end date attached to the asking.</p>' + cards;
+  }
+  function pkgPolicy(id){
+    var p = pkgBy(id), cands = allUsers().filter(function(u){ return u.status==='Enabled' && !u.service && !u.shared && u.dept!=='External'; });
+    openModal('Policy — ' + p.name,
+      '<p class="hint">Three questions: who may ask, who decides, and when it ends. A package with no approver is a self-service grant. A package with no end date is a permanent one.</p>' +
+      '<label class="fld" for="pp-s">Who can request</label><select class="in" id="pp-s">' +
+        [['any','Anyone, including guests from any domain'],['partners','Users from the permitted partner domains'],['internal','Employees only']].map(function(o){ return '<option value="' + o[0] + '"' + (p.scope===o[0]?' selected':'') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
+      '<label class="fld" for="pp-a">Approver</label><select class="in" id="pp-a"><option value="">None \u2014 grant automatically</option>' +
+        cands.map(function(u){ return '<option value="' + esc(u.upn) + '"' + (p.approver===u.upn?' selected':'') + '>' + esc(u.name) + ' \u2014 ' + esc(u.title) + '</option>'; }).join('') + '</select>' +
+      '<label class="fld" for="pp-e">Access expires</label><select class="in" id="pp-e"><option value="">Never</option>' +
+        (D.pkgExpiryOptions||['after 30 days','after 90 days','after 180 days']).map(function(o){ return '<option value="' + esc(o) + '"' + (p.expiry===o?' selected':'') + '>' + esc(o) + '</option>'; }).join('') + '</select>',
+      'Save', function(){
+        var sc = document.getElementById('pp-s').value, ap = document.getElementById('pp-a').value, ex = document.getElementById('pp-e').value;
+        act('Update access package policy', p.name, function(){ p.scope = sc; p.approver = ap; p.expiry = ex; },
+          'Policy updated', {cat:'Role management', detail:p.name + ' · requestable by ' + sc + ', approver ' + (ap?pname(ap):'none') + ', expires ' + (ex||'never') + '.'});
+      });
+  }
+  function pkgDecide(id, rid, dec){
+    var p = pkgBy(id), r = (p.requests||[]).filter(function(x){ return x.id===rid; })[0]; if(!r) return;
+    openModal((dec==='approved'?'Approve':'Deny') + ' — ' + r.who,
+      '<p>' + esc(r.who) + ' at <span class="mono">' + esc(r.email||'') + '</span> asked for <b>' + esc(p.name) + '</b>.</p>' +
+      '<p class="faint">“' + esc(r.why||'') + '”</p>' + (r.flag ? '<div class="banner warn"><span>' + esc(r.flag) + '</span></div>' : '') +
+      '<label class="fld" for="pd-w">Decision note</label><input class="in" id="pd-w" placeholder="Recorded against the request">',
+      dec==='approved' ? 'Approve' : 'Deny', function(){
+        var w = document.getElementById('pd-w').value.trim(); if(w.length<3) return false;
+        act(dec==='approved' ? 'Approve access request' : 'Deny access request', r.who, function(){ r.decision = dec; r.note = w; },
+          'Request ' + dec, {cat:'Role management', detail:p.name + ' · ' + r.who + ' (' + (r.email||'') + ') ' + dec + '. ' + w});
+      }, null, dec!=='approved');
+  }
+
+  // ---- inbound HR feed ------------------------------------------------
+  // The payroll system is the source of authority for who exists, what they are
+  // called and when they leave. The console only ever reacts to it. Every
+  // record here is a decision: is this a new person, the same person again, or
+  // the same person under a different name?
+  function hrFeed(){ if(!S.hr && D.hrFeed) S.hr = JSON.parse(JSON.stringify(D.hrFeed)); return S.hr; }
+  function hrRec(wid){ var f = hrFeed(); if(!f) return null; for(var i=0;i<f.records.length;i++){ if(f.records[i].wid===wid) return f.records[i]; } return null; }
+  function hrStatePill(r){
+    if(r.done==='created') return '<span class="pill en">Identity created</span>';
+    if(r.done==='matched') return '<span class="pill en">Matched to ' + esc(pname(r.matchedTo)) + '</span>';
+    if(r.done==='renamed') return '<span class="pill en">Name change applied</span>';
+    if(r.done==='leaver') return '<span class="pill en">Leaver actioned</span>';
+    if(r.done==='held') return '<span class="pill warn">Held — sent back to HR</span>';
+    return '<span class="pill dis">Not processed</span>';
+  }
+  function pHr(){
+    var f = hrFeed();
+    if(!f) return '<h1 class="pg">HR feed</h1><div class="card"><div class="card-b faint">No inbound feed is configured for this shift.</div></div>';
+    var rows = f.records.map(function(r){
+      var kind = r.kind==='new' ? 'Starter' : r.kind==='rehire' ? 'Starter' : r.kind==='name' ? 'Change of name' : r.kind==='leaver' ? 'Leaver' : r.kind==='change' ? 'Change' : 'Record';
+      var acts = [];
+      if(!r.done){
+        if(r.kind==='new' || r.kind==='rehire') acts.push('<button class="btn sm" data-hrnew="' + r.wid + '" type="button">Create identity</button>', '<button class="btn sec sm" data-hrmatch="' + r.wid + '" type="button">Match to existing</button>');
+        if(r.kind==='name') acts.push('<button class="btn sm" data-hrname="' + r.wid + '" type="button">Apply name change</button>');
+        if(r.kind==='leaver') acts.push('<button class="btn sm" data-hrleave="' + r.wid + '" type="button">Action the leaver</button>');
+        acts.push('<button class="btn sec sm" data-hrhold="' + r.wid + '" type="button">Hold</button>');
+      }
+      return '<tr><td class="mono nowrap">' + esc(r.wid) + '</td>' +
+        '<td><b>' + esc(r.preferred || r.legal) + '</b>' + (r.legal && r.preferred && r.legal!==r.preferred ? '<div class="faint" style="font-size:12.5px">Legal name: ' + esc(r.legal) + '</div>' : '') + '</td>' +
+        '<td>' + esc(kind) + '<div class="faint" style="font-size:12.5px">' + esc(r.note||'') + '</div></td>' +
+        '<td>' + esc(r.title||'—') + '<div class="faint" style="font-size:12.5px">' + esc(r.dept||'') + (r.mgr ? ' · ' + esc(r.mgr) : '') + '</div></td>' +
+        '<td class="mono faint nowrap">' + esc(r.hire||'') + (r.term ? '<br>leaves ' + esc(r.term) : '') + '</td>' +
+        '<td>' + hrStatePill(r) + '</td>' +
+        '<td><div class="row" style="gap:6px">' + acts.join('') + '</div></td></tr>';
+    }).join('');
+    var gaps = f.records.filter(function(r){ return (r.missing||[]).length && !r.done; });
+    var gapHtml = gaps.map(function(r){ return '<li><span class="mono">' + esc(r.wid) + '</span> ' + esc(r.preferred||r.legal) + ' — missing <b>' + esc((r.missing||[]).join(', ')) + '</b></li>'; }).join('');
+    return '<h1 class="pg">HR feed</h1><p class="sub">' + esc(f.system) + ' · last delivery ' + esc(f.lastRun) + ' · next ' + esc(f.nextRun) + '. This system decides who exists. The directory follows it, never the other way round.</p>' +
+      (gapHtml ? card('Records the feed could not complete', '<span class="pill warn">' + gaps.length + '</span>', '<div class="card-b"><ul class="feed">' + gapHtml + '</ul><p class="hint">A field the feed did not send is a question for HR, not a value for you to invent. Guessing a cost centre puts someone in the wrong role template and nobody finds out until the access review.</p></div>') : '') +
+      card('This delivery', '', table(['Worker ID','Name','Type','Role','Dates','Status',''], rows, 'Nothing in this delivery.'));
+  }
+  function hrNew(wid){
+    var r = hrRec(wid);
+    var dupe = allUsers().filter(function(u){ return u.eid && r.eid && u.eid===r.eid; })[0] ||
+               allUsers().filter(function(u){ return u.name===(r.preferred||r.legal); })[0];
+    openModal('Create an identity — ' + (r.preferred||r.legal),
+      ((r.missing||[]).length ? '<div class="banner bad"><span>The feed did not send <b>' + esc((r.missing||[]).join(', ')) + '</b> for this record. Creating now means choosing those values yourself.</span></div>' : '') +
+      (dupe ? '<div class="banner warn"><span>Payroll number <span class="mono">' + esc(r.eid||'') + '</span> already belongs to <b>' + esc(dupe.name) + '</b> (' + esc(dupe.status) + '). Creating a second identity gives this person a new history and leaves the old one behind.</span></div>' : '') +
+      '<dl class="kv sm"><dt>Worker ID</dt><dd class="mono">' + esc(r.wid) + '</dd><dt>Payroll number</dt><dd class="mono">' + esc(r.eid||'—') + '</dd><dt>Role</dt><dd>' + esc(r.title||'—') + '</dd><dt>Department</dt><dd>' + esc(r.dept||'—') + '</dd><dt>Manager</dt><dd>' + esc(r.mgr||'—') + '</dd><dt>Start date</dt><dd>' + esc(r.hire||'—') + '</dd>' +
+        (r.term ? '<dt>End date</dt><dd><b>' + esc(r.term) + '</b></dd>' : '') + '</dl>' +
+      (r.term ? '<label class="fld" for="hn-x">Account expires</label><select class="in" id="hn-x"><option value="">Not set</option><option value="' + esc(r.term) + ' 23:59">' + esc(r.term) + ' 23:59</option></select><p class="hint">The feed is carrying an end date. Setting it now is the only version of this that still works in August if nobody remembers.</p>' : ''),
+      'Create identity', function(){
+        var exp = r.term ? document.getElementById('hn-x').value : '';
+        act('Create identity from HR record', r.preferred||r.legal, function(){
+          r.done = 'created'; r.createdDupe = !!dupe; r.expSet = !!exp;
+          var nu = {upn:(r.sam||''), name:(r.preferred||r.legal), title:r.title||'', dept:r.dept||'', mgr:r.mgr||'', mgrUpn:r.mgrUpn||'', status:'Not created',
+                    device:'', groups:[], sessions:[], note:'Created from HR record ' + r.wid + '.', eid:r.eid||'', hired:r.hire||'', created:'today', pwd:'—', mfa:[], lic:'', apps:[],
+                    ad:{exists:false, sam:(r.sam||''), ou:'Users (default container)', enabled:false, groups:[], pwdSet:'—', lastLogon:'never', desc:r.title||''},
+                    roles:[], rules:[], devices:[], delegates:[], odAccess:[], fromHr:r.wid, acctExp:(exp||''), contractEnd:(r.term||'')};
+          S.users[nu.upn] = nu;
+        }, 'Identity created for ' + (r.preferred||r.legal), {cat:'User management', detail:'HR record ' + r.wid + ' · new identity. ' + (exp ? 'Account expires ' + exp + ', taken from the feed. ' : r.term ? 'The feed carried an end date of ' + r.term + ' and no account expiry was set. ' : '') + (dupe ? 'A record with the same payroll number already existed (' + dupe.name + ').' : '')});
+      });
+  }
+  function hrMatch(wid){
+    var r = hrRec(wid);
+    var cands = allUsers().filter(function(u){ return u.status!=='Not created'; });
+    var best = cands.filter(function(u){ return u.eid && r.eid && u.eid===r.eid; })[0];
+    openModal('Match to an existing identity — ' + (r.preferred||r.legal),
+      '<p class="hint">Somebody who comes back is the same person. Matching keeps their payroll number, their object, their mailbox and every access review decision ever made about them. Creating a second identity throws all of that away and leaves the first one for somebody else to find.</p>' +
+      (best ? '<div class="banner warn"><span>Payroll number <span class="mono">' + esc(r.eid) + '</span> matches <b>' + esc(best.name) + '</b> — ' + esc(best.status) + '.</span></div>' : '') +
+      '<label class="fld" for="hm-u">Existing identity</label><select class="in" id="hm-u">' +
+        cands.map(function(u){ return '<option value="' + esc(u.upn) + '"' + (best && best.upn===u.upn ? ' selected' : '') + '>' + esc(u.name) + ' — ' + esc(u.title) + ' (' + esc(u.status) + ')</option>'; }).join('') + '</select>' +
+      '<label class="check"><input type="checkbox" id="hm-en" checked> Re-enable the account and restore the role template for ' + esc(r.title||'the new role') + '</label>',
+      'Match', function(){
+        var upn = document.getElementById('hm-u').value, en = document.getElementById('hm-en').checked, u = U(upn);
+        act('Match HR record to existing identity', u.name, function(){
+          r.done = 'matched'; r.matchedTo = upn; r.reEnabled = en;
+          if(en){ u.status = 'Enabled'; if(u.ad) { u.ad.enabled = true; } u.title = r.title || u.title; u.dept = r.dept || u.dept; u.rehired = true; }
+        }, 'Matched to ' + u.name, {cat:'User management', detail:'HR record ' + r.wid + ' matched to the existing identity ' + mail(u.upn) + '. ' + (en ? 'Account re-enabled for the new role.' : 'Account left as it was.')});
+      });
+  }
+  function hrName(wid){
+    var r = hrRec(wid);
+    var u = U(r.matchUpn) || allUsers().filter(function(x){ return x.eid && r.eid && x.eid===r.eid; })[0];
+    if(!u){ toast('No identity on this payroll number to rename.'); return; }
+    openModal('Change of name — ' + u.name,
+      '<p class="hint">A rename is two separate things. The display name is cosmetic. The sign-in name is an identifier, and every application that keys on it will treat the new one as a different person unless the old one is kept as an alias.</p>' +
+      '<dl class="kv sm"><dt>Current</dt><dd>' + esc(u.name) + ' <span class="mono faint">' + esc(mail(u.upn)) + '</span></dd><dt>HR legal name</dt><dd>' + esc(r.legal) + '</dd><dt>HR preferred name</dt><dd>' + esc(r.preferred||r.legal) + '</dd></dl>' +
+      '<label class="fld" for="rn-d">Display name</label><input class="in" id="rn-d" value="' + esc(r.preferred||r.legal) + '">' +
+      '<label class="fld" for="rn-s">Sign-in name</label><div class="row" style="gap:4px;flex-wrap:nowrap"><input class="in mono" id="rn-s" value="' + esc(r.newSam||u.upn) + '"><span class="mono faint nowrap">@' + esc(DOM) + '</span></div>' +
+      '<label class="check"><input type="checkbox" id="rn-a" checked> Keep <span class="mono">' + esc(mail(u.upn)) + '</span> as a secondary address so mail to the old name still arrives</label>',
+      'Apply', function(){
+        var dn = document.getElementById('rn-d').value.trim(), sam = (document.getElementById('rn-s').value||'').trim().toLowerCase(), keep = document.getElementById('rn-a').checked;
+        if(!dn || !sam) return false;
+        var clash = upnTaken(sam); if(clash && clash.upn!==u.upn){ toast('That sign-in name already belongs to ' + clash.name + '.'); return false; }
+        act('Change name', u.name, function(){
+          r.done = 'renamed'; r.appliedTo = u.upn;
+          var old = u.upn;
+          u.oldUpn = old; u.renamedFrom = u.name; u.name = dn;
+          if(u.ad) u.ad.sam = sam;
+          u.upn = sam; u.keptAlias = keep;
+          if(sam !== old){ delete S.users[old]; S.users[sam] = u; }
+          if(keep){ u.aliases = (u.aliases||[]).concat([u.oldUpn]); }
+        }, dn + ' renamed', {cat:'User management', detail:'HR record ' + r.wid + ' · display name “' + dn + '”, sign-in name ' + sam + '@' + DOM + '. ' + (keep ? 'Previous address kept as a secondary address.' : 'Previous address NOT kept — mail to it will bounce.') + ' The directory object, payroll number and mailbox are unchanged.'});
+      });
+  }
+  function hrLeaver(wid){
+    var r = hrRec(wid);
+    var u = U(r.matchUpn) || allUsers().filter(function(x){ return x.eid && r.eid && x.eid===r.eid; })[0];
+    openModal('Leaver from the feed — ' + (r.preferred||r.legal),
+      '<p>Payroll has this person leaving on <b>' + esc(r.term||'—') + '</b>.' + (u ? ' The directory shows <b>' + esc(u.name) + '</b> as <b>' + esc(u.status) + '</b>.' : '') + '</p>' +
+      '<p class="hint">The feed is the source of authority for whether somebody still works here. Where the directory disagrees with it, the directory is wrong — but find out why it disagrees before you act, because the other possibility is that the feed is describing a different person.</p>',
+      'Mark actioned', function(){
+        act('Action leaver from HR record', r.preferred||r.legal, function(){ r.done = 'leaver'; }, 'Leaver actioned',
+          {cat:'User management', detail:'HR record ' + r.wid + ' · leaver acknowledged against the feed, effective ' + (r.term||'') + '.'});
+      });
+  }
+  function hrHold(wid){
+    var r = hrRec(wid);
+    openModal('Send back to HR — ' + (r.preferred||r.legal),
+      '<p class="hint">Holding a record is a real answer. It means the directory will not invent what payroll did not send.</p>' +
+      '<label class="fld" for="hh-w">What is missing or wrong</label><input class="in" id="hh-w" value="' + esc((r.missing||[]).length ? 'Feed did not send ' + (r.missing||[]).join(', ') : '') + '">',
+      'Hold and notify HR', function(){
+        var w = document.getElementById('hh-w').value.trim(); if(w.length<4) return false;
+        act('Hold HR record', r.preferred||r.legal, function(){ r.done = 'held'; r.heldWhy = w; },
+          'Held and sent back to HR', {cat:'User management', detail:'HR record ' + r.wid + ' held. ' + w});
+      });
+  }
+  function NUMW(n){ var w = ['Zero','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen']; return w[n] || String(n); }
   function card(title, right, inner){ return '<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>' + title + '</h3>' + (right||'') + '</div>' + inner + '</div>'; }
   function table(head, rows, empty){ return rows ? '<div class="tablewrap"><table class="t"><thead><tr>' + head.map(function(h){ return '<th>' + h + '</th>'; }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="card-b faint">' + empty + '</div>'; }
 
@@ -1253,7 +2383,7 @@
         (st.status==='returned' && ap ? '<div class="note" style="margin:0 0 10px">' + esc(whoShort(ap.from)) + ' responded: <b>' + esc(ap.decision) + '</b>. Read the timeline, act on it, then resolve.</div>' : '') +
         '<p class="hint" style="margin-top:0">Make your changes in the directory first. Resolving records your decision. It doesn’t change anything by itself.</p>' +
         '<label class="fld" for="r-disp">Action</label><select class="in" id="r-disp"><option value="">Choose…</option>' + DISP.map(function(d){ return '<option value="' + d[0] + '">' + d[1] + '</option>'; }).join('') + '</select>' +
-        '<div id="r-tow" hidden><label class="fld" for="r-to">Approver</label><select class="in" id="r-to">' + APPROVERS.map(function(a){ return '<option value="' + a + '">' + esc(U(a).name) + ' — ' + esc(U(a).title) + '</option>'; }).join('') + '</select></div>' +
+        '<div id="r-tow" hidden><label class="fld" for="r-to">Approver</label><select class="in" id="r-to">' + APPROVERS().map(function(a){ return '<option value="' + a + '">' + esc(U(a).name) + ' — ' + esc(U(a).title) + '</option>'; }).join('') + '</select></div>' +
         '<label class="fld" for="r-note">Work note</label><textarea class="in" id="r-note" placeholder="What you did and why. Cite the policy section you relied on."></textarea>' +
         '<div class="row" style="margin-top:12px"><button class="btn" id="r-go" type="button" disabled>Submit</button><span class="hint" id="r-need"></span></div></div></div>';
     } else {
@@ -1428,8 +2558,213 @@
   function pApp(a){
     var rows = []; allUsers().forEach(function(u){ u.apps.forEach(function(x,i){ if(x.app===a.name) rows.push('<tr><td><button class="link" data-user="' + u.upn + '" type="button">' + esc(u.name) + '</button><div class="faint" style="font-size:12.5px">' + esc(u.title) + ' · ' + esc(u.dept) + '</div></td><td><b>' + esc(x.role) + '</b></td><td class="faint">' + esc(x.since) + ' by ' + esc(x.by) + '</td><td><button class="btn danger sm" data-rmapp="' + u.upn + '|' + i + '" type="button">Remove</button></td></tr>'); }); });
     var grp = Object.keys(a.viaGroup).map(function(g){ return '<tr><td class="mono">' + g + '</td><td>' + esc(a.viaGroup[g]) + '</td><td>' + members(g).length + ' members</td></tr>'; }).join('');
-    return '<div class="crumbs"><button data-nav="apps" type="button">Applications</button> / ' + esc(a.name) + '</div><h1 class="pg">' + esc(a.name) + '</h1><p class="sub">' + esc(a.desc) + ' · Owner: ' + esc(a.owner) + ' · Roles: ' + esc(a.roles.join(', ')) + '</p>' +
+    var hasSso = !!sso(a), hasScim = !!scim(a);
+    var tab = S.apptab || 'access';
+    if(tab==='sso' && !hasSso) tab = 'access';
+    if(tab==='prov' && !hasScim) tab = 'access';
+    var tabs = [['access','Access']];
+    if(hasSso) tabs.push(['sso','Single sign-on']);
+    if(hasScim) tabs.push(['prov','Provisioning']);
+    var tabbar = tabs.length>1 ? '<div class="chips">' + tabs.map(function(t){ return '<button class="chip' + (tab===t[0]?' on':'') + '" data-apptab="' + t[0] + '" type="button">' + t[1] + '</button>'; }).join('') + '</div>' : '';
+    var head = '<div class="crumbs"><button data-nav="apps" type="button">Applications</button> / ' + esc(a.name) + '</div><h1 class="pg">' + esc(a.name) + '</h1><p class="sub">' + esc(a.desc) + ' · Owner: ' + esc(a.owner) + ' · Roles: ' + esc(a.roles.join(', ')) + '</p>' + tabbar;
+    if(tab==='sso') return head + ssoCard(a);
+    if(tab==='prov') return head + scimCard(a);
+    return head +
       card('Group assignments', '', table(['Group','Role','Members'], grp, 'None.')) + card('Direct user assignments', '<span class="faint" style="font-size:12.5px">Not removed by group changes</span>', table(['User','Role','Assigned',''], rows.join(''), 'No direct assignments.'));
+  }
+
+  // ---- Single sign-on -------------------------------------------------
+  // A SAML app is four things that must agree with the other side: who we say
+  // we are (entity ID), where we send the assertion (ACS), what we call the
+  // user (NameID), and the certificate we sign with. Get one wrong and the
+  // failure is silent on our side and loud on theirs.
+  function ssoCard(a){
+    var s = sso(a);
+    var cert = s.cert || {};
+    var certPill = certExpired(cert) ? '<span class="pill dis">Expired ' + esc(cert.expires||'') + '</span>' : '<span class="pill en">Valid to ' + esc(cert.expires||'') + '</span>';
+    var claims = (s.claims||[]).map(function(c){ return '<tr><td class="mono">' + esc(c.name) + '</td><td class="mono faint">' + esc(c.source) + '</td><td>' + (c.required ? '<span class="pill warn">Required by the app</span>' : '<span class="faint">Optional</span>') + '</td><td>' + (c.missing ? '<span class="res bad">Not mapped</span>' : '<span class="res ok">Mapped</span>') + '</td></tr>'; }).join('');
+    var urls = '<dl class="kv sm">' +
+      '<dt>Protocol</dt><dd>' + esc(s.protocol||'SAML 2.0') + '</dd>' +
+      '<dt>Identifier (entity ID)</dt><dd class="mono' + (s.entityId ? '' : ' faint') + '">' + esc(s.entityId || 'not set') + '</dd>' +
+      '<dt>Reply URL (ACS)</dt><dd class="mono' + (s.acs ? '' : ' faint') + '">' + esc(s.acs || 'not set') + '</dd>' +
+      '<dt>Sign-on URL</dt><dd class="mono' + (s.signOnUrl ? '' : ' faint') + '">' + esc(s.signOnUrl || 'not set') + '</dd>' +
+      '<dt>NameID</dt><dd class="mono">' + esc(s.nameId || 'not set') + ' <span class="faint">· ' + esc(s.nameIdFormat||'Persistent') + '</span></dd>' +
+      '</dl>';
+    var log = (s.tests||[]).map(function(t){ return '<li><span class="mono faint">' + esc(t.t) + '</span> — <span class="res ' + (t.ok?'ok':'bad') + '">' + esc(t.ok?'Success':'Failure') + '</span> ' + esc(t.msg) + '</li>'; }).join('');
+    return card('Configuration', '<button class="btn sm" data-ssoedit="' + esc(a.name) + '" type="button">Edit</button>', '<div class="card-b">' + urls + '</div>') +
+      card('Attributes and claims', '<button class="btn sec sm" data-ssoclaim="' + esc(a.name) + '" type="button">Add a claim</button>', table(['Claim','Source','','Status'], claims, 'No claims configured. The app will only see the NameID.')) +
+      card('Signing certificate', '<button class="btn sm" data-ssocert="' + esc(a.name) + '" type="button">' + (cert.pending ? 'Activate the new certificate' : 'Create a new certificate') + '</button>',
+        '<div class="card-b"><dl class="kv sm"><dt>Status</dt><dd>' + certPill + '</dd><dt>Thumbprint</dt><dd class="mono faint">' + esc(cert.thumb||'') + '</dd>' +
+        (cert.pending ? '<dt>Pending</dt><dd class="mono faint">' + esc(cert.newThumb||'') + ' — created, not yet active</dd>' : '') +
+        '</dl><p class="hint">The app trusts one certificate at a time. Rolling over means giving them the new one <i>before</i> you activate it, or every sign-in fails at their end and nothing on ours looks wrong.</p></div>') +
+      card('Test sign-on', '<button class="btn sm" data-ssotest="' + esc(a.name) + '" type="button">Run a test</button>', log ? '<div class="card-b"><ul class="feed">' + log + '</ul></div>' : '<div class="card-b faint">Not tested this shift.</div>');
+  }
+  function ssoEdit(n){
+    var a = appBy(n), s = sso(a);
+    openModal('Single sign-on — ' + a.name,
+      '<p class="hint">These three values come from the application vendor. They are exact strings: a trailing slash, or http where they said https, is a failed sign-in.</p>' +
+      '<label class="fld" for="so-e">Identifier (entity ID)</label><input class="in mono" id="so-e" value="' + esc(s.entityId||'') + '">' +
+      '<label class="fld" for="so-a">Reply URL (assertion consumer service)</label><input class="in mono" id="so-a" value="' + esc(s.acs||'') + '">' +
+      '<label class="fld" for="so-s">Sign-on URL</label><input class="in mono" id="so-s" value="' + esc(s.signOnUrl||'') + '">' +
+      '<label class="fld" for="so-n">NameID</label><select class="in" id="so-n">' +
+        ['user.userprincipalname','user.mail','user.employeeid','user.objectid'].map(function(o){ return '<option value="' + o + '"' + (s.nameId===o?' selected':'') + '>' + o + '</option>'; }).join('') + '</select>',
+      'Save', function(){
+        var ent = document.getElementById('so-e').value.trim(), acs = document.getElementById('so-a').value.trim(),
+            son = document.getElementById('so-s').value.trim(), nid = document.getElementById('so-n').value;
+        act('Update single sign-on configuration', a.name, function(){ s.entityId = ent; s.acs = acs; s.signOnUrl = son; s.nameId = nid; s.edited = true; },
+          'Single sign-on updated for ' + a.name, {cat:'Application management', detail:a.name + ' · entity ID ' + ent + ', reply URL ' + acs + ', NameID ' + nid + '.'});
+      });
+  }
+  function ssoClaim(n){
+    var a = appBy(n), s = sso(a);
+    var missing = (s.claims||[]).filter(function(c){ return c.missing; });
+    var opts = ['user.employeeid','user.department','user.jobtitle','user.mail','user.givenname','user.surname','user.objectid'];
+    openModal('Add a claim — ' + a.name,
+      (missing.length ? '<p class="hint">' + esc(a.name) + ' is asking for <span class="mono">' + esc(missing.map(function(c){ return c.name; }).join(', ')) + '</span> and is not getting it.</p>' : '') +
+      '<label class="fld" for="cl-n">Claim name</label><input class="in mono" id="cl-n" value="' + esc(missing.length ? missing[0].name : '') + '">' +
+      '<label class="fld" for="cl-s">Source attribute</label><select class="in" id="cl-s">' + opts.map(function(o){ return '<option value="' + o + '">' + o + '</option>'; }).join('') + '</select>',
+      'Add claim', function(){
+        var nm = document.getElementById('cl-n').value.trim(), src = document.getElementById('cl-s').value;
+        if(!nm) return false;
+        act('Add SAML claim', a.name, function(){
+          s.claims = s.claims || [];
+          var hit = null; s.claims.forEach(function(c){ if(c.name===nm) hit = c; });
+          if(hit){ hit.source = src; hit.missing = false; } else s.claims.push({name:nm, source:src, required:false, missing:false});
+        }, 'Claim ' + nm + ' mapped', {cat:'Application management', detail:a.name + ' · claim “' + nm + '” now sourced from ' + src + '.'});
+      });
+  }
+  function ssoCert(n){
+    var a = appBy(n), s = sso(a), c = s.cert = s.cert || {};
+    if(c.pending){
+      openModal('Activate the new certificate — ' + a.name,
+        '<p>Activating makes <span class="mono">' + esc(c.newThumb||'') + '</span> the signing certificate immediately. Every assertion is signed with it from the next sign-in onwards.</p>' +
+        '<p class="hint">Only do this once the application owner confirms they have loaded it. If they have not, you have swapped a certificate that is expiring for one they do not trust.</p>' +
+        '<label class="row"><input type="checkbox" id="ct-c"> <span>The application owner has confirmed the new certificate is loaded</span></label>',
+        'Activate', function(){
+          var confirmed = document.getElementById('ct-c').checked;
+          act('Activate signing certificate', a.name, function(){
+            c.thumb = c.newThumb; c.expires = c.newExpires || 'in 3 years'; c.expired = false; c.pending = false; c.activated = true; c.activatedBlind = !confirmed;
+          }, 'New signing certificate is active', {cat:'Application management', detail:a.name + ' · signing certificate rolled over to ' + c.newThumb + (confirmed ? '. Owner confirmed the certificate was loaded first.' : '. Activated without confirmation from the application owner.')});
+        });
+      return;
+    }
+    openModal('New signing certificate — ' + a.name,
+      '<p>This creates a second certificate. Nothing changes for the application until you activate it, which is what lets you hand it over first.</p>' +
+      '<label class="fld" for="ct-l">Lifetime</label><select class="in" id="ct-l"><option value="1">1 year</option><option value="2">2 years</option><option value="3" selected>3 years</option></select>',
+      'Create certificate', function(){
+        var yr = document.getElementById('ct-l').value;
+        act('Create signing certificate', a.name, function(){
+          c.pending = true; c.newThumb = guid('cert'+a.name+S.clock).replace(/-/g,'').slice(0,40).toUpperCase(); c.newExpires = 'in ' + yr + ' years'; c.created = true;
+        }, 'Certificate created — not yet active', {cat:'Application management', detail:a.name + ' · new signing certificate created, ' + yr + '-year lifetime. Not active; the current certificate still signs.'});
+      });
+  }
+  // The test is the teaching surface: it names the first thing that is wrong,
+  // in the order the protocol actually fails, rather than a generic error.
+  function ssoDiagnose(a){
+    var s = sso(a), c = s.cert || {}, want = s.expect || {};
+    if(!s.entityId) return {ok:false, msg:'No identifier configured. The application cannot tell which identity provider the assertion came from.'};
+    if(want.entityId && s.entityId !== want.entityId) return {ok:false, msg:'The application rejected the assertion: the identifier we sent does not match the one it expects.'};
+    if(!s.acs) return {ok:false, msg:'No reply URL configured. The assertion has nowhere to go.'};
+    if(want.acs && s.acs !== want.acs) return {ok:false, msg:'The reply URL is not one the application accepts. Check it character for character, including the scheme and any trailing slash.'};
+    if(certExpired(c)) return {ok:false, msg:'The signing certificate expired on ' + (c.expires||'') + '. The application will not trust an assertion signed with it.'};
+    if(c.activatedBlind) return {ok:false, msg:'The application does not trust the certificate we are signing with. It was activated before the owner loaded it.'};
+    if(want.nameId && s.nameId !== want.nameId) return {ok:false, msg:'The application cannot match the user: it keys accounts on ' + want.nameId.replace('user.','') + ', and we are sending ' + (s.nameId||'nothing').replace('user.','') + '.'};
+    var missing = (s.claims||[]).filter(function(x){ return x.required && x.missing; });
+    if(missing.length) return {ok:false, msg:'Signed in, but the application refused the session: it requires the claim ' + missing.map(function(x){ return x.name; }).join(', ') + ' and did not receive it.'};
+    return {ok:true, msg:'Assertion accepted. The application matched the user and returned a session.'};
+  }
+  function ssoTest(n){
+    var a = appBy(n), s = sso(a);
+    var r = ssoDiagnose(a);
+    act('Test single sign-on', a.name, function(){ s.tests = s.tests || []; s.tests.unshift({t:stamp(), ok:r.ok, msg:r.msg}); s.tested = true; if(r.ok) s.working = true; },
+      r.ok ? 'Test sign-on succeeded' : 'Test sign-on failed', {cat:'Application management', detail:a.name + ' · test sign-on ' + (r.ok?'succeeded':'failed') + '. ' + r.msg});
+  }
+
+  // ---- Provisioning (SCIM) --------------------------------------------
+  function scimCard(a){
+    var p = scim(a);
+    var on = p.state === 'On';
+    var map = (p.mapping||[]).map(function(m){ return '<tr><td class="mono">' + esc(m.src) + '</td><td class="mono faint">→ ' + esc(m.dst) + '</td><td>' + (m.matching ? '<span class="pill warn">Matching attribute</span>' : '') + '</td></tr>'; }).join('');
+    var log = (p.log||[]).map(function(l){ return '<tr><td class="mono nowrap">' + esc(l.t) + '</td><td>' + esc(l.who) + '</td><td>' + esc(l.action) + '</td><td class="res ' + (/fail|skip/i.test(l.result)?'bad':'ok') + '">' + esc(l.result) + '</td></tr>'; }).join('');
+    var orph = (p.orphans||[]).map(function(o){ return '<tr><td>' + esc(o.name) + '</td><td class="mono faint">' + esc(o.id) + '</td><td class="faint">' + esc(o.note||'') + '</td><td><button class="btn danger sm" data-scimdel="' + esc(a.name) + '|' + esc(o.id) + '" type="button">Deprovision</button></td></tr>'; }).join('');
+    return card('Provisioning', '<button class="btn sm" data-scimtoggle="' + esc(a.name) + '" type="button">' + (on?'Turn off':'Turn on') + '</button>',
+        '<div class="card-b"><dl class="kv sm"><dt>Status</dt><dd>' + (on ? '<span class="pill en">On</span>' : '<span class="pill dis">Off</span>') + '</dd>' +
+        '<dt>Tenant URL</dt><dd class="mono' + (p.endpoint?'':' faint') + '">' + esc(p.endpoint || 'not set') + '</dd>' +
+        '<dt>Secret token</dt><dd>' + (p.tokenSet ? '<span class="faint">Stored</span>' : '<span class="res bad">Not set</span>') + '</dd>' +
+        '<dt>Scope</dt><dd>' + (p.scope==='assigned' ? 'Assigned users and groups only' : '<span style="color:var(--warn);font-weight:600">All users in the directory</span>') + ' <button class="link" data-scimscope="' + esc(a.name) + '" type="button">change</button></dd>' +
+        '<dt>On unassignment</dt><dd>' + (p.removeOnUnassign ? 'Disable the account in the application' : '<span style="color:var(--warn);font-weight:600">Leave the account in place</span>') + ' <button class="link" data-scimremove="' + esc(a.name) + '" type="button">change</button></dd>' +
+        '</dl><p class="hint">Scope decides who gets an account. Unassignment behaviour decides whether leaving the company actually closes it. They are separate settings and only one of them is about joining.</p></div>') +
+      card('Attribute mapping', '', table(['Directory','Application',''], map, 'No mapping configured.')) +
+      card('Provision on demand', '<button class="btn sec sm" data-scimrun="' + esc(a.name) + '" type="button">Run a cycle</button>', table(['Time','Identity','Action','Result'], log, 'No provisioning has run.')) +
+      ((p.orphans||[]).length ? card('Accounts in the application with no matching identity', '<span class="pill warn">' + (p.orphans||[]).length + '</span>', table(['Name','Application ID','','']  , orph, '')) : '');
+  }
+  function scimToggle(n){
+    var a = appBy(n), p = scim(a);
+    if(p.state==='On'){
+      openModal('Turn off provisioning — ' + a.name, '<p>Accounts already created in ' + esc(a.name) + ' stay exactly as they are. Nothing is removed, and nothing further is synchronised.</p>', 'Turn off', function(){
+        act('Disable provisioning', a.name, function(){ p.state = 'Off'; }, 'Provisioning off for ' + a.name, {cat:'Application management', detail:a.name + ' · SCIM provisioning disabled. Existing accounts untouched.'});
+      });
+      return;
+    }
+    openModal('Turn on provisioning — ' + a.name,
+      '<p class="hint">The tenant URL and token come from the application. Until both are set, nothing provisions.</p>' +
+      '<label class="fld" for="sp-u">Tenant URL</label><input class="in mono" id="sp-u" value="' + esc(p.endpoint||'') + '" placeholder="https://.../scim/v2">' +
+      '<label class="fld" for="sp-t">Secret token</label><input class="in mono" id="sp-t" type="password" placeholder="paste the token from the application">' +
+      '<label class="fld" for="sp-s">Scope</label><select class="in" id="sp-s"><option value="assigned">Assigned users and groups only</option><option value="all">All users in the directory</option></select>',
+      'Turn on', function(){
+        var u = document.getElementById('sp-u').value.trim(), t = document.getElementById('sp-t').value.trim(), sc = document.getElementById('sp-s').value;
+        if(!u || !t) return false;
+        act('Enable provisioning', a.name, function(){ p.state='On'; p.endpoint=u; p.tokenSet=true; p.scope=sc; }, 'Provisioning on for ' + a.name,
+          {cat:'Application management', detail:a.name + ' · SCIM provisioning enabled against ' + u + ', scope: ' + (sc==='assigned'?'assigned users and groups':'all users in the directory') + '.'});
+      });
+  }
+  function scimScope(n){
+    var a = appBy(n), p = scim(a);
+    openModal('Provisioning scope — ' + a.name,
+      '<p class="hint">“All users” means everyone in the directory gets an account in ' + esc(a.name) + ', including service accounts and people who have never been assigned it. Licences are usually counted per account.</p>' +
+      '<label class="row"><input type="radio" name="ss" id="ss-a" value="assigned"' + (p.scope!=='all'?' checked':'') + '> <span>Assigned users and groups only</span></label>' +
+      '<label class="row"><input type="radio" name="ss" id="ss-b" value="all"' + (p.scope==='all'?' checked':'') + '> <span>All users in the directory</span></label>',
+      'Save', function(){
+        var v = document.getElementById('ss-b').checked ? 'all' : 'assigned';
+        act('Change provisioning scope', a.name, function(){ p.scope = v; }, 'Scope updated', {cat:'Application management', detail:a.name + ' · provisioning scope set to ' + (v==='all'?'all users in the directory':'assigned users and groups only') + '.'});
+      });
+  }
+  function scimRemove(n){
+    var a = appBy(n), p = scim(a);
+    openModal('When someone is unassigned — ' + a.name,
+      '<p class="hint">This is the setting that decides whether a leaver actually loses this application. Leaving the account in place is what produces an account nobody owns and nobody reviews.</p>' +
+      '<label class="row"><input type="radio" name="sr" id="sr-a"' + (p.removeOnUnassign?' checked':'') + '> <span>Disable the account in the application</span></label>' +
+      '<label class="row"><input type="radio" name="sr" id="sr-b"' + (p.removeOnUnassign?'':' checked') + '> <span>Leave the account in place</span></label>',
+      'Save', function(){
+        var v = document.getElementById('sr-a').checked;
+        act('Change unassignment behaviour', a.name, function(){ p.removeOnUnassign = v; }, 'Saved', {cat:'Application management', detail:a.name + ' · on unassignment, accounts are now ' + (v?'disabled in the application':'left in place') + '.'});
+      });
+  }
+  function scimRun(n){
+    var a = appBy(n), p = scim(a);
+    if(p.state!=='On'){ toast('Provisioning is off for ' + a.name + '.'); return; }
+    act('Run provisioning cycle', a.name, function(){
+      p.log = p.log || [];
+      var scoped = allUsers().filter(function(u){
+        if(p.scope==='all') return u.status!=='Deleted';
+        return u.apps.some(function(x){ return x.app===a.name; }) || Object.keys(a.viaGroup||{}).some(function(g){ return (u.groups||[]).indexOf(g)>=0; });
+      });
+      scoped.slice(0,6).forEach(function(u){
+        var m = (p.mapping||[]).filter(function(x){ return x.matching; })[0];
+        var val = m ? (m.src==='userPrincipalName' ? u.upn : m.src==='employeeId' ? (u.eid||'') : u.name) : u.upn;
+        p.log.unshift({t:stamp(), who:u.name, action: u.status==='Disabled' ? (p.removeOnUnassign ? 'Disable' : 'Skip') : 'Create or update',
+          result: u.status==='Disabled' && !p.removeOnUnassign ? 'Skipped — unassignment is set to leave the account' : (m && !val ? 'Failed — matching attribute is empty' : 'Success')});
+      });
+      p.ran = true;
+    }, 'Provisioning cycle complete', {cat:'Application management', detail:a.name + ' · on-demand provisioning cycle run.'});
+  }
+  function scimDeprovision(n, id){
+    var a = appBy(n), p = scim(a);
+    var o = (p.orphans||[]).filter(function(x){ return x.id===id; })[0]; if(!o) return;
+    openModal('Deprovision — ' + o.name, '<p>This closes the account <span class="mono">' + esc(id) + '</span> inside ' + esc(a.name) + '. It has no matching identity in the directory, so nothing here will recreate it.</p>', 'Deprovision', function(){
+      act('Deprovision application account', o.name, function(){ p.orphans = p.orphans.filter(function(x){ return x.id!==id; }); p.deprovisioned = (p.deprovisioned||[]).concat([id]); },
+        o.name + ' deprovisioned in ' + a.name, {cat:'Application management', detail:a.name + ' · application account ' + id + ' (' + o.name + ') closed. No matching directory identity.'});
+    }, null, true);
   }
   function pLicenses(){
     var rows = D.licenses.map(function(l){ var a = licAvail(l.name); return '<tr><td><b>' + esc(l.name) + '</b></td><td>' + (l.total - a) + '</td><td>' + l.total + '</td><td' + (a<3?' style="color:var(--warn);font-weight:600"':'') + '>' + a + '</td></tr>'; }).join('');
@@ -1448,10 +2783,13 @@
     if(/legacy/i.test(s.app)) os = 'IMAP client · legacy protocol';
     var method = s.mfa==='Not reached' || s.mfa==='Not supported' ? 'Password (not completed)' : managed && /Windows sign-in/.test(s.app) && !/Temporary/.test(s.mfa) ? 'Windows Hello' : /token/.test(s.mfa) ? 'Refresh token (no interactive auth)' : /Temporary/.test(s.mfa) ? 'Temporary Access Pass' : 'Password + Authenticator push';
     var risk = /185\.220/.test(s.ip) ? '<span class="pill warn">Medium</span> unfamiliar location · anonymizing host' : 'None';
-    var ca = [];
-    ca.push(['CA01 · Require MFA for all users', s.mfa==='Not reached' ? 'Not applied (failed before MFA)' : /legacy/i.test(s.app) ? 'Not applied' : 'Success']);
-    ca.push(['CA02 · Block legacy authentication', /legacy/i.test(s.app) ? 'Failure: blocked' : 'Not applied']);
-    if(/Finance|Payments/.test(s.app)) ca.push(['CA03 · Require compliant device for Finance apps', managed ? 'Success' : 'Report-only: would have blocked']);
+    // the same evaluator the What-If panel uses, so the two can never disagree
+    var ev = caEval({upn:s.upn, app:s.app, client:/legacy/i.test(s.app) ? 'legacy' : 'browser',
+      mfa: !(s.mfa==='Not reached' || s.mfa==='Not supported'), compliant: managed,
+      phishResistant: /key|passkey|hello/i.test(s.mfa||''), anon: /185\.220/.test(s.ip),
+      risk: /185\.220/.test(s.ip) ? 'medium' : 'none'});
+    var ca = ev.rows.filter(function(r){ return r.applied; }).map(function(r){ return [r.p.id + ' · ' + r.p.name, r.res]; });
+    if(!ca.length) ca = [['No policy applied to this sign-in', 'Not applied']];
     var code = ok ? '0' : /legacy/.test(s.res) ? 'AUTH-53003' : /disabled/.test(s.res) ? 'AUTH-50057' : /Denied/.test(s.res) ? 'AUTHZ-403' : 'AUTH-50126';
     var html = '<dl class="kv sm"><dt>Date</dt><dd class="mono">' + esc(s.t) + ':' + pad(hash(key)%60) + '</dd><dt>User</dt><dd>' + esc(pname(s.upn)) + ' <span class="mono faint">' + (U(s.upn) ? mail(s.upn) : s.upn) + '</span></dd>' +
       '<dt>Resource</dt><dd>' + esc(s.app) + '</dd><dt>Status</dt><dd class="res ' + resClass(s.res) + '">' + esc(s.res) + '</dd><dt>Error code</dt><dd class="mono">' + code + '</dd>' +
@@ -1570,7 +2908,9 @@
   }
   function pCA(){
     return '<h1 class="pg">Conditional access</h1><p class="sub">Rules evaluated on every cloud sign-in. Report-only records what a policy would have done without doing it.</p>' +
-      card('Policies', '', table(['Policy','Assigned to','Control','State','',''], S.ca.map(function(p){ return '<tr><td><span class="mono">' + esc(p.id) + '</span> ' + esc(p.name) + (p.note ? '<div class="faint" style="font-size:12px">' + esc(p.note) + '</div>' : '') + '</td><td class="faint">' + esc(p.assign) + '<div class="faint" style="font-size:12px">except ' + esc(p.exclude) + '</div></td><td>' + esc(p.controls) + '</td><td>' + (p.state==='On' ? '<span class="pill en">On</span>' : p.state==='Report-only' ? '<span class="pill warn">Report-only</span>' : '<span class="pill dis">' + esc(p.state) + '</span>') + '</td><td><button class="btn sec sm" data-ca="' + esc(p.id) + '" type="button">' + (p.state==='On' ? 'Set report-only' : 'Turn on') + '</button></td><td></td></tr>'; }).join(''), '')) +
+      (caRisks().length ? card('Before you change anything', '<span class="pill warn">' + caRisks().length + '</span>', '<div class="card-b"><ul class="feed">' + caRisks().map(function(r){ return '<li>' + esc(r.text) + '</li>'; }).join('') + '</ul></div>') : '') +
+      card('Policies', '', table(['Policy','Assigned to','Control','State','',''], S.ca.map(function(p){ return '<tr><td><span class="mono">' + esc(p.id) + '</span> ' + esc(p.name) + (p.note ? '<div class="faint" style="font-size:12px">' + esc(p.note) + '</div>' : '') + '</td><td class="faint">' + esc(caScopeText(p)) + '</td><td>' + esc(caControlText(p)) + '</td><td>' + (p.state==='On' ? '<span class="pill en">On</span>' : p.state==='Report-only' ? '<span class="pill warn">Report-only</span>' : '<span class="pill dis">' + esc(p.state) + '</span>') + '</td><td><div class="row" style="gap:6px"><button class="btn sec sm" data-ca="' + esc(p.id) + '" type="button">' + (p.state==='On' ? 'Set report-only' : 'Turn on') + '</button><button class="btn sec sm" data-caedit="' + esc(p.id) + '" type="button">Edit</button></div></td><td></td></tr>'; }).join(''), '')) +
+      caWhatIf() +
       (S.authPolicy ? card('Authentication methods policy', '', '<div class="card-b"><p class="hint" style="margin-top:0">' + esc(S.authPolicy.note || '') + '</p><dl class="kv sm">' +
         [['numberMatching','Number matching for push approvals'],['pushLocation','Show the sign-in location in the prompt'],['legacyBlocked','Block legacy authentication']].map(function(k){
           return '<dt>' + k[1] + '</dt><dd>' + (S.authPolicy[k[0]] ? '<span class="pill en">On</span>' : '<span class="pill dis">Off</span>') + ' <button class="link" data-auth="' + k[0] + '" type="button">' + (S.authPolicy[k[0]] ? 'Turn off' : 'Turn on') + '</button></dd>';
@@ -1952,7 +3292,7 @@
     return '<div class="front"><div class="front-in">' +
       '<header class="front-top">' +
         '<p class="front-eyebrow">Least Privilege · a hybrid identity simulator</p>' +
-        '<h1 class="front-h1">Nine shifts at one company.<br><span class="hl-2">Every decision comes back.</span></h1>' +
+        '<h1 class="front-h1">' + NUMW(ids.length) + ' shifts at one company.<br><span class="hl-2">Every decision comes back.</span></h1>' +
         '<p class="front-lede">Each shift is a full day on the identity and access queue at Meridian Freight \u2014 the same directory, the same people, and whatever the last shift left behind. There are no multiple-choice answers. You do the work in the console, and when the shift ends you find out what every decision cost three months later.</p>' +
         spanLine(ids) +
         '<dl class="front-stats">' +
@@ -1997,6 +3337,10 @@
 
   // ---------- grading ----------
   function test(c){
+    // true when anybody in the directory carries this name — used negated, to
+    // grade an identity that should never have been created at all
+    if(c.userExists){ var needle = c.userExists.toLowerCase();
+      return allUsers().some(function(x){ return (x.name||'').toLowerCase().indexOf(needle)>=0; }); }
     if(c.any) return c.any.some(test);
     if(c.not) return !test(c.not);
     if(c.t){ var st = S.tickets[c.t]; if(!st) return false;
@@ -2036,10 +3380,153 @@
     if(c.risk) return riskState(c.risk)===c.state;
     if(c.consent){ var cc = consentBy(c.consent); if(!cc) return false; if(c.revoked) return cc.state==='revoked' || cc.state==='blocked'; if(c.blocked) return cc.state==='blocked'; return false; }
     if(c.authPolicy) return !!(S.authPolicy && S.authPolicy[c.authPolicy]);
-    if(c.ca){ var cp = caBy(c.ca); return !!(cp && cp.state===c.state); }
+    if(c.ca){
+      var cp = caBy(c.ca); if(!cp) return false;
+      if(c.excludes) return caNorm(cp).exclude.indexOf(c.excludes) >= 0;
+      if(c.covers) return caCovers(cp, {upn:c.covers});
+      if(c.notCovers) return !caCovers(cp, {upn:c.notCovers});
+      return cp.state === c.state;
+    }
+    if(c.signInWouldBe){
+      var ctx = c.signInWouldBe;
+      return caEval(ctx).outcome.indexOf(c.outcome || 'Success') === 0;
+    }
     if(c.contacted) return !!(S.contacted||{})[c.contacted];
     if(c.gpo){ var gg = gpoBy(c.gpo); if(!gg) return false; if(c.linked) return gg.state!=='draft'; if(c.enforced) return !!gg.enforced; return true; }
     if(c.delegHas) return S.deleg.some(function(x){ return x.ou===c.delegHas && x.who===c.who; });
+    // --- the credential vault ---------------------------------------------
+    if(c.safe){
+      var sf = safeBy(c.safe); if(!sf) return false;
+      var sp = sf.policy || {};
+      if(c.rotateOnReturn) return !!sp.rotateOnReturn;
+      if(c.recordSession) return !!sp.recordSession;
+      if(c.approval) return sp.checkout === 'approval';
+      if(c.maxMins) return !!sp.maxMins && sp.maxMins <= c.maxMins;
+      if(c.holds) return (sf.accounts||[]).some(function(x){ return x.id===c.holds; });
+      return true;
+    }
+    if(c.cred){
+      var vv2 = vault();
+      var va = vAcc(c.cred);
+      if(!va){
+        var sealed = ((vv2||{}).sealed||[]).filter(function(x){ return x.id===c.cred; })[0];
+        if(sealed){ if(c.rotated) return !!sealed.rotated; if(c.sealed) return true; return true; }
+        return false;
+      }
+      if(c.inSafe) return !va.checkedOutBy;
+      if(c.out) return !!va.checkedOutBy;
+      if(c.rotated) return !!(va.rotated || va.rotatedOnReturn || va.rotatedOnOnboard);
+      if(c.onboarded) return !!va.onboarded;
+      if(c.recorded) return !!va.recorded;
+      if(c.ticketed) return !!(va.ticket || va.lastTicket);
+      // a generic "was ticketed" leaks across check-outs; name the ticket
+      if(c.ticketIs) return va.ticket === c.ticketIs || va.lastTicket === c.ticketIs;
+      if(c.forcedIn) return !!va.forcedIn;
+      return true;
+    }
+    if(c.sealedOut){ var vv3 = vault(); return !!vv3 && (vv3.sealed||[]).some(function(x){ return x.id===c.sealedOut; }); }
+    if(c.unmanagedGone){ var vv = vault(); return !!vv && !(vv.unmanaged||[]).some(function(x){ return x.id===c.unmanagedGone; }); }
+    // --- authentication methods ------------------------------------------
+    if(c.method){
+      var mm = amBy(c.method); if(!mm) return false;
+      if(c.enabled) return mm.state === 'Enabled';
+      if(c.disabled) return mm.state !== 'Enabled';
+      if(c.scope) return mm.state === 'Enabled' && mm.scope === c.scope;
+      if(c.notFor) return mm.state !== 'Enabled' || (mm.scope !== 'all' && mm.scope !== c.notFor);
+      return true;
+    }
+    if(c.sspr){
+      var sp = (am()||{}).sspr || {};
+      if(c.scope) return sp.scope === c.scope;
+      if(c.on) return !!sp.scope && sp.scope !== 'none';
+      if(c.required) return sp.required === c.required;
+      if(c.permits) return (sp.allowed||[]).indexOf(c.permits) >= 0;
+      if(c.forbids) return (sp.allowed||[]).indexOf(c.forbids) < 0;
+      if(c.campaignOn) return !!(sp.campaign && sp.campaign.on);
+      if(c.campaignFor) return !!(sp.campaign && sp.campaign.on && sp.campaign.method === c.campaignFor);
+      return true;
+    }
+    if(c.registration != null){
+      var rr2 = ((am()||{}).registrations||[])[c.registration];
+      return !!rr2 && rr2.handled === (c.as || 'Removed');
+    }
+    // --- external identities and access packages -------------------------
+    if(c.guest){
+      var gg2 = guestBy(c.guest); if(!gg2) return false;
+      if(c.removed) return !!gg2.removed;
+      if(c.kept) return !gg2.removed;
+      if(c.sponsored) return !gg2.removed && !!gg2.sponsor && (c.sponsor ? gg2.sponsor===c.sponsor : true);
+      if(c.expirySet) return !gg2.removed && !!gg2.expires;
+      if(c.noGroup) return (gg2.groups||[]).indexOf(c.noGroup) < 0;
+      return true;
+    }
+    if(c.collab){
+      var cc2 = (ext()||{}).collab || {};
+      if(c.allowList) return cc2.mode === 'allow-list' && (cc2.allow||[]).length > 0;
+      if(c.domain) return (cc2.allow||[]).indexOf(c.domain) >= 0;
+      if(c.guestPerms) return cc2.guestPerms === c.guestPerms;
+      if(c.whoCanInvite) return cc2.whoCanInvite === c.whoCanInvite;
+      return true;
+    }
+    if(c.pkg){
+      var pp2 = pkgBy(c.pkg); if(!pp2) return false;
+      if(c.approver) return pp2.approver === c.approver;
+      if(c.hasApprover) return !!pp2.approver;
+      if(c.expirySet) return !!pp2.expiry;
+      if(c.scope) return pp2.scope === c.scope;
+      if(c.decided){ var rr = (pp2.requests||[]).filter(function(x){ return x.id===c.decided; })[0]; return !!rr && rr.decision === (c.as||'approved'); }
+      return true;
+    }
+    // --- HR feed --------------------------------------------------------
+    if(c.hr){
+      var hrr = hrRec(c.hr); if(!hrr) return false;
+      if(c.created) return hrr.done === 'created';
+      if(c.noDuplicate) return !(hrr.done === 'created' && hrr.createdDupe);
+      if(c.matchedTo) return hrr.done === 'matched' && hrr.matchedTo === c.matchedTo;
+      if(c.reEnabled) return !!hrr.reEnabled;
+      if(c.renamed) return hrr.done === 'renamed';
+      if(c.held) return hrr.done === 'held';
+      if(c.leaver) return hrr.done === 'leaver';
+      if(c.expSet) return !!hrr.expSet;
+      if(c.untouched) return !hrr.done;
+      if(c.done) return !!hrr.done;
+      return true;
+    }
+    if(c.renamedTo){
+      var ru = U(c.renamedTo); if(!ru) return false;
+      if(c.display) return ru.name === c.display;
+      if(c.keptAlias) return !!ru.keptAlias;
+      if(c.sameObject) return !!ru.oldUpn;
+      return true;
+    }
+    // --- single sign-on -------------------------------------------------
+    if(c.sso){
+      var ss = sso(c.sso); if(!ss) return false;
+      if(c.entityId) return ss.entityId === c.entityId;
+      if(c.acs) return ss.acs === c.acs;
+      if(c.nameId) return ss.nameId === c.nameId;
+      if(c.signOnUrl) return ss.signOnUrl === c.signOnUrl;
+      if(c.claim){ return (ss.claims||[]).some(function(x){ return x.name===c.claim && !x.missing && (!c.from || x.source===c.from); }); }
+      if(c.certCreated) return !!(ss.cert && ss.cert.created);
+      if(c.certActive) return !!(ss.cert && ss.cert.activated && !ss.cert.expired);
+      if(c.certConfirmed) return !!(ss.cert && ss.cert.activated && !ss.cert.activatedBlind);
+      if(c.certNotActive) return !(ss.cert && ss.cert.activated);
+      if(c.tested) return !!ss.tested;
+      if(c.works) return !!ss.working;
+      return true;
+    }
+    if(c.scim){
+      var sp = scim(c.scim); if(!sp) return false;
+      if(c.on) return sp.state === 'On';
+      if(c.off) return sp.state !== 'On';
+      if(c.scope) return sp.scope === c.scope;
+      if(c.removeOnUnassign) return !!sp.removeOnUnassign;
+      if(c.leftInPlace) return !sp.removeOnUnassign;
+      if(c.ran) return !!sp.ran;
+      if(c.orphanGone) return (sp.deprovisioned||[]).indexOf(c.orphanGone) >= 0;
+      if(c.noOrphans) return !(sp.orphans||[]).length;
+      return true;
+    }
     if(c.krb){
       var k = S.krb || {}, rs = k.resets || [];
       if(c.krb==='reset') return rs.length >= 1;
@@ -2106,6 +3593,8 @@
     if(c.mfaNone) return !u.mfa.length;
     if(c.mbxShared) return u.mbx==='Shared';
     if(c.mbxSafe) return !u.mbxDeleting;
+    if(c.accountEnabled) return u.status==='Enabled';
+    if(c.accountDisabled) return u.status==='Disabled';
     if(c.hold) return !!u.hold;
     if(c.noHold) return !u.hold;
     if(c.preserved) return !!u.hold && !u.mbxDeleting;
@@ -2298,11 +3787,22 @@
     chrome();
     if(S.screen!=='console'){
       root.innerHTML = S.screen==='pick' ? pPick() : S.screen==='intro' ? pIntro() : S.screen==='login' ? pLogin() : S.screen==='mfa' ? pMfa() : S.screen==='later' ? pLater() : pScore();
-      root.querySelectorAll('[data-scn]').forEach(function(b){ b.onclick = function(){ loadScenario(b.dataset.scn); if(S.screen==='pick') S.screen = 'intro'; save(); render(); window.scrollTo(0,0); }; });
+      root.querySelectorAll('[data-scn]').forEach(function(b){ b.onclick = function(){
+        var id = b.dataset.scn;
+        if(SCN[id] && SCN[id]._stub) b.classList.add('loading');
+        ensureScenario(id, function(failed){
+          b.classList.remove('loading');
+          if(failed) return;
+          loadScenario(id); if(S.screen==='pick') S.screen = 'intro'; save(); render(); window.scrollTo(0,0);
+        });
+      }; });
       root.querySelectorAll('[data-restart]').forEach(function(b){ b.onclick = function(ev){ ev.stopPropagation(); var id = b.dataset.restart;
         confirmBox('Start this shift again', '<p>Clear your progress on <b>' + esc(SCN[id].headline) + '</b> and begin it from the top?</p>' + impact(['Everything you changed in that shift is discarded.'], 'Your best score for it is kept.'), 'Start again', function(){
           try{ localStorage.removeItem(scnKey(id)); }catch(err){}
-          loadScenario(id); S.screen = 'intro'; save(); render(); window.scrollTo(0,0);
+          ensureScenario(id, function(failed){
+            if(failed) return;
+            loadScenario(id); S.screen = 'intro'; save(); render(); window.scrollTo(0,0);
+          });
         }, true); }; });
       root.querySelectorAll('[data-pick]').forEach(function(b){ b.onclick = function(){ S.screen = 'pick'; save(); render(); window.scrollTo(0,0); }; });
       var b = document.getElementById('begin'); if(b) b.onclick = function(){ S.screen='login'; S.authErr=''; save(); render(); };
@@ -2319,9 +3819,9 @@
       var rv = document.getElementById('review'); if(rv) rv.onclick = function(){ S.screen='console'; S.page='audit'; S.acat='mine'; S.done = true; save(); render(); };
       return;
     }
-    var navItems = [['home','Home'],['tickets','Tickets'],['sep','Cloud directory'],['users','Users'],['groups','Groups'],['roles','Admin roles'],['apps','Applications'],['licenses','Licenses'],['ca','Conditional access'],['sep','Governance'],['review','Access reviews'],['findings','Audit findings'],['svc','Service accounts'],['appregs','App registrations'],['risk','Identity protection'],['consents','App consents'],['bg','Emergency access'],['sep','On-premises'],['ad','Active Directory'],['gpo','Group Policy'],['shares','File shares'],['sync','Directory sync'],['sep','Tools'],['ps','PowerShell'],['sep','Monitoring'],['signins','Sign-in logs'],['audit','Audit log'],['sep','Reference'],['policy','Access policy'],['runbooks','Runbooks'],['sep','You'],['myroles','My roles'],['scenarios','Scenarios']];
+    var navItems = [['home','Home'],['tickets','Tickets'],['sep','Sources'],['hr','HR feed'],['sep','Cloud directory'],['users','Users'],['groups','Groups'],['roles','Admin roles'],['apps','Applications'],['licenses','Licenses'],['ca','Conditional access'],['authm','Authentication methods'],['sep','Governance'],['vault','Credential vault'],['ext','External identities'],['pkg','Access packages'],['review','Access reviews'],['findings','Audit findings'],['svc','Service accounts'],['appregs','App registrations'],['risk','Identity protection'],['consents','App consents'],['bg','Emergency access'],['sep','On-premises'],['ad','Active Directory'],['gpo','Group Policy'],['shares','File shares'],['sync','Directory sync'],['sep','Tools'],['ps','PowerShell'],['sep','Monitoring'],['report','Reporting'],['signins','Sign-in logs'],['audit','Audit log'],['sep','Reference'],['policy','Access policy'],['runbooks','Runbooks'],['sep','You'],['myroles','My roles'],['scenarios','Scenarios']];
     var cur = {ticket:'tickets', user:'users', group:'groups', role:'roles', app:'apps'}[S.page] || S.page;
-    navItems = navItems.filter(function(n){ return !(n[0]==='review' && !D.review) && !(n[0]==='findings' && !D.findings) && !(n[0]==='svc' && !svcList().length) && !(n[0]==='appregs' && !S.appRegs.length) && !(n[0]==='risk' && !S.risk.length) && !(n[0]==='consents' && !S.consents.length) && !(n[0]==='bg' && !(S.bg||[]).length) && !(n[0]==='scenarios' && Object.keys(SCN).length<2); });
+    navItems = navItems.filter(function(n){ return !(n[0]==='vault' && !D.vault) && !(n[0]==='authm' && !D.authMethods) && !(n[0]==='ext' && !D.external) && !(n[0]==='pkg' && !D.packages) && !(n[0]==='hr' && !D.hrFeed) && !(n[0]==='review' && !D.review) && !(n[0]==='findings' && !D.findings) && !(n[0]==='svc' && !svcList().length) && !(n[0]==='appregs' && !S.appRegs.length) && !(n[0]==='risk' && !S.risk.length) && !(n[0]==='consents' && !S.consents.length) && !(n[0]==='bg' && !(S.bg||[]).length) && !(n[0]==='scenarios' && Object.keys(SCN).length<2); });
     navItems = navItems.filter(function(n, ix){ if(n[0]!=='sep') return true; for(var k=ix+1;k<navItems.length;k++){ if(navItems[k][0]!=='sep') return true; } return false; });
     navItems = navItems.filter(function(n, ix){ return !(n[0]==='sep' && navItems[ix+1] && navItems[ix+1][0]==='sep'); });
     root.innerHTML = '<div class="shell"><nav class="nav" aria-label="Console">' + navItems.map(function(n){
@@ -2335,6 +3835,24 @@
   function wire(){
     var m = root;
     var on = function(sel, fn){ m.querySelectorAll(sel).forEach(function(b){ b.onclick = function(e){ e.stopPropagation(); fn(b, e); }; }); };
+    // Clickable table rows were mouse-only: a <tr> takes a click handler but is
+    // not in the tab order and has no implicit role, so a keyboard user could
+    // not open a single user, group, ticket or application record. Every table
+    // in the console is built the same way, so this fixes all of them at once.
+    m.querySelectorAll('tr.click').forEach(function(tr){
+      if(tr.getAttribute('tabindex')===null) tr.setAttribute('tabindex','0');
+      if(!tr.getAttribute('role')) tr.setAttribute('role','button');
+      if(!tr.getAttribute('aria-label')){
+        var first = tr.querySelector('td');
+        if(first){
+          var label = (first.innerText || first.textContent || '').trim().split('\n')[0].trim();
+          if(label) tr.setAttribute('aria-label', 'Open ' + label);
+        }
+      }
+      tr.onkeydown = function(ev){
+        if(ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar'){ ev.preventDefault(); tr.click(); }
+      };
+    });
     on('[data-nav]', function(b){ nav(b.dataset.nav); });
     m.querySelectorAll('[data-ticket]').forEach(function(b){ b.onclick = function(){ nav('ticket', b.dataset.ticket); }; });
     on('[data-user]', function(b){ nav('user', b.dataset.user); });
@@ -2387,6 +3905,39 @@
     on('[data-svcrot]', function(b){ svcRotate(b.dataset.svcrot); });
     on('[data-reportobj]', function(b){ reportObj(b.dataset.reportobj); });
     on('[data-job]', function(b){ var p = split(b.dataset.job); jobAction(p[0], +p[1], p[2]); });
+    on('[data-vout]', function(b){ vaultCheckout(b.dataset.vout); });
+    on('[data-vin]', function(b){ var a = vAcc(b.dataset.vin); vaultCheckin(b.dataset.vin, vOverdue(a) || a.checkedOutBy !== ME); });
+    on('[data-vrot]', function(b){ vaultRotate(b.dataset.vrot); });
+    on('[data-vpol]', function(b){ vaultPolicy(b.dataset.vpol); });
+    on('[data-vonboard]', function(b){ vaultOnboard(b.dataset.vonboard); });
+    on('[data-voff]', function(b){ vaultOffboard(b.dataset.voff); });
+    on('[data-vrec]', function(b){ vaultRecording(b.dataset.vrec); });
+    on('[data-amedit]', function(b){ amEdit(b.dataset.amedit); });
+    on('[data-sspr]', function(){ ssprEdit(); });
+    on('[data-amcamp]', function(){ amCampaign(); });
+    on('[data-amreg]', function(b){ amRegAction(+b.dataset.amreg); });
+    on('[data-grmg]', function(b){ var q = split(b.dataset.grmg); guestGroupRemove(q[0], q[1]); });
+    on('[data-gsponsor]', function(b){ guestSponsor(b.dataset.gsponsor); });
+    on('[data-gexp]', function(b){ guestExpiry(b.dataset.gexp); });
+    on('[data-grm]', function(b){ guestRemove(b.dataset.grm); });
+    on('[data-collab]', function(){ collabEdit(); });
+    on('[data-ppol]', function(b){ pkgPolicy(b.dataset.ppol); });
+    on('[data-preq]', function(b){ var q = split(b.dataset.preq); pkgDecide(q[0], q[1], q[2]); });
+    on('[data-hrnew]', function(b){ hrNew(b.dataset.hrnew); });
+    on('[data-hrmatch]', function(b){ hrMatch(b.dataset.hrmatch); });
+    on('[data-hrname]', function(b){ hrName(b.dataset.hrname); });
+    on('[data-hrleave]', function(b){ hrLeaver(b.dataset.hrleave); });
+    on('[data-hrhold]', function(b){ hrHold(b.dataset.hrhold); });
+    on('[data-apptab]', function(b){ S.apptab = b.dataset.apptab; render(); });
+    on('[data-ssoedit]', function(b){ ssoEdit(b.dataset.ssoedit); });
+    on('[data-ssoclaim]', function(b){ ssoClaim(b.dataset.ssoclaim); });
+    on('[data-ssocert]', function(b){ ssoCert(b.dataset.ssocert); });
+    on('[data-ssotest]', function(b){ ssoTest(b.dataset.ssotest); });
+    on('[data-scimtoggle]', function(b){ scimToggle(b.dataset.scimtoggle); });
+    on('[data-scimscope]', function(b){ scimScope(b.dataset.scimscope); });
+    on('[data-scimremove]', function(b){ scimRemove(b.dataset.scimremove); });
+    on('[data-scimrun]', function(b){ scimRun(b.dataset.scimrun); });
+    on('[data-scimdel]', function(b){ var q = split(b.dataset.scimdel); scimDeprovision(q[0], q[1]); });
     on('[data-secadd]', function(b){ secretAdd(b.dataset.secadd); });
     on('[data-secrev]', function(b){ var p = split(b.dataset.secrev); secretRevoke(p[0], p[1]); });
     on('[data-regown]', function(b){ regOwners(b.dataset.regown); });
@@ -2413,6 +3964,11 @@
     on('[data-close]', function(b){ closeHandle(+b.dataset.close); });
     on('[data-deleg]', function(b){ delegRemove(+b.dataset.deleg); });
     on('[data-ca]', function(b){ caToggle(b.dataset.ca); });
+    on('[data-caedit]', function(b){ caEdit(b.dataset.caedit); });
+    var wiBind = function(id, key, kind){ var el = document.getElementById(id); if(!el) return;
+      el.onchange = function(){ S.whatif = S.whatif || {}; S.whatif[key] = kind==='check' ? el.checked : el.value; save(); render(); }; };
+    wiBind('wi-u','upn'); wiBind('wi-a','app'); wiBind('wi-c','client'); wiBind('wi-r','risk');
+    wiBind('wi-m','mfa','check'); wiBind('wi-d','compliant','check'); wiBind('wi-p','phishResistant','check'); wiBind('wi-n','anon','check');
     on('[data-bg]', function(b){ var x = split(b.dataset.bg); bgAction(x[0], x[1]); });
     on('[data-unlock]', function(b){ unlockAccount(b.dataset.unlock); });
     var efu = document.getElementById('efu'); if(efu) efu.onchange = function(){ S.efu = efu.value; render(); };
@@ -2427,7 +3983,7 @@
           if(DESK && S.psreal){ psOut('PS> ' + v, 'in'); save(); render();
             window.LPDesktop.run(v).then(function(r){ (r.out||'').split('\n').forEach(function(l){ if(l.trim()!=='') psOut(l.replace(/\r$/,'')); }); (r.err||'').split('\n').forEach(function(l){ if(l.trim()!=='') psOut(l.replace(/\r$/,''), 'err'); }); if(!r.out && !r.err) psOut('(no output)'); save(); render(); });
             return; }
-          psRun(v); save(); render(); }
+          psExec(v); save(); render(); }
         else if(ev.key==='ArrowUp' || ev.key==='ArrowDown'){
           var hist = S.ps.filter(function(l){ return l.t==='in'; }).map(function(l){ return l.s.replace('PS C:\\> ',''); });
           if(!hist.length) return; if(hi<0) hi = hist.length;
@@ -2551,6 +4107,7 @@
   })();
 
   loadScenario(CUR);
+  if(window.LP_MANIFEST) setTimeout(prefetchScenarios, 1500);
   if(Object.keys(SCN).length > 1) S.screen = 'pick';
   render();
 })();

@@ -28,6 +28,48 @@
   button,input,select,textarea{font:inherit;color:inherit}
   button{cursor:pointer}
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  /* ---- reporting ------------------------------------------------------
+     One hero figure, a KPI row of stat tiles, meters for ratios against a
+     target, and one-hue bars for counts. No categorical palette: status
+     colour never carries meaning alone, it always sits beside a word. */
+  .hero{display:flex;align-items:center;gap:22px;background:var(--surface);border:1px solid var(--rule);
+    border-radius:var(--r);padding:22px 24px;margin-bottom:14px;box-shadow:var(--sh-1)}
+  .hero-n{font-size:64px;line-height:.92;font-weight:800;letter-spacing:-.04em;color:var(--accent)}
+  .hero-n span{font-size:28px;font-weight:700;margin-left:2px}
+  .hero-t{display:flex;flex-direction:column;gap:4px}
+  .hero-t b{font-size:17px}
+  .hero-t span{color:var(--ink-soft);font-size:14px;max-width:52ch}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:10px;margin:0 0 14px}
+  .stat{background:var(--surface);border:1px solid var(--rule);border-radius:var(--r-sm);padding:14px 16px;box-shadow:var(--sh-1)}
+  .stat dt{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint);font-family:var(--mono)}
+  .stat dd{margin:6px 0 0;font-size:30px;font-weight:700;letter-spacing:-.025em}
+  .stat p{margin:5px 0 0;font-size:12.5px;color:var(--ink-soft);line-height:1.38}
+  .stat.ok dd{color:var(--ok)} .stat.warn dd{color:var(--warn)} .stat.bad dd{color:var(--bad)}
+
+  .mtr{margin-bottom:16px} .mtr:last-child{margin-bottom:0}
+  .mtr-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:6px}
+  .mtr-l{font-weight:600;font-size:14px}
+  .mtr-v b{font-size:16px} .mtr-v .faint{font-size:12.5px}
+  .mtr-t{position:relative;height:10px;border-radius:5px;background:var(--accent-soft);overflow:visible}
+  .mtr-f{position:absolute;left:0;top:0;bottom:0;border-radius:5px;display:block}
+  .mtr-f.ok{background:var(--ok)} .mtr-f.warn{background:var(--warn)} .mtr-f.bad{background:var(--bad)}
+  .mtr-g{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink-faint);opacity:.85}
+  .mtr-n{margin:6px 0 0;font-size:12.5px;color:var(--ink-soft);display:flex;align-items:center;gap:6px}
+  .sdot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 auto}
+  .sdot.ok{background:var(--ok)} .sdot.warn{background:var(--warn)} .sdot.bad{background:var(--bad)}
+
+  .bars{display:flex;flex-direction:column;gap:2px}
+  .bar-r{display:grid;grid-template-columns:minmax(150px,auto) 1fr 56px;align-items:center;gap:12px;padding:3px 0}
+  .bar-l{font-size:13.5px;display:flex;align-items:center;gap:6px}
+  .bar-flag{font-size:11.5px;color:var(--ink-faint);font-family:var(--mono)}
+  .bar-w{height:16px;display:block;position:relative}
+  .bar-w i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:0 4px 4px 0;display:block}
+  .bar-v{font-size:13.5px;font-variant-numeric:tabular-nums;text-align:right;color:var(--ink-soft)}
+  @media (max-width:640px){ .hero{flex-direction:column;align-items:flex-start;gap:10px}
+    .bar-r{grid-template-columns:1fr 46px;grid-template-areas:'l l' 'w v'} .bar-l{grid-area:l} .bar-w{grid-area:w} .bar-v{grid-area:v} }
+
+  tr.click:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-soft)}
 
   .bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:var(--bar);color:var(--bar-ink);display:block;padding:0}
   .bar.hud{background:linear-gradient(103deg,var(--hud-a),var(--hud-b) 58%);box-shadow:0 1px 0 rgba(255,255,255,.06), 0 6px 18px -10px rgba(13,20,33,.5)}
