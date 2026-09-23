@@ -1,5 +1,5 @@
 /* Least Privilege — offline cache. Network first so updates land, cache fallback so it runs with no connection. */
-const CACHE = 'least-privilege-v21';
+const CACHE = 'least-privilege-v22';
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', e => {

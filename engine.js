@@ -126,6 +126,11 @@
     S = loaded || fresh();
     S.scn = id;
     if(S.screen==='pick') S.screen = 'intro';
+    // Progress persists; the session does not. Returning to a shift you are part
+    // way through puts you back through sign-in, which is what the policy the
+    // console states on every sign-in actually describes. A finished shift goes
+    // to its scorecard instead.
+    if(S.screen==='console'){ S.screen = 'login'; S.authErr = ''; S.resumed = true; }
   }
 
   var root = document.getElementById('root'), modalEl = document.getElementById('modal'), toastEl = document.getElementById('toast'), progEl = document.getElementById('prog');
@@ -3870,6 +3875,22 @@
       '<span class="sl-track">' + pins + '</span>' +
       '<span class="sl-end r">' + esc(l.month + ' ' + l.year) + '</span></div>';
   }
+  function anyProgress(){
+    if(Object.keys(META).length) return true;
+    try{
+      for(var i=0;i<localStorage.length;i++){ if((localStorage.key(i)||'').indexOf('lp.console.v6.')===0) return true; }
+    }catch(e){}
+    return false;
+  }
+  function wipeAll(){
+    var kill = [];
+    try{
+      for(var i=0;i<localStorage.length;i++){ var k = localStorage.key(i)||'';
+        if(k.indexOf('lp.console.')===0) kill.push(k); }
+      kill.forEach(function(k){ localStorage.removeItem(k); });
+    }catch(e){}
+    META = {};
+  }
   function pPick(){
     var ids = Object.keys(SCN);
     var totalT = 0, totalS = 0;
@@ -3908,7 +3929,8 @@
         '</dl>' +
       '</header>' +
       '<div class="roster">' + rows + '</div>' +
-      '<p class="front-fine">Built by Maurisha Houston. Meridian Freight, its people, its domain and its console are fictional. Real cmdlet and control names are used because the job asks for them. Progress saves in this browser, per shift.</p>' +
+      (anyProgress() ? '<div class="row" style="justify-content:center;margin-top:26px"><button class="btn sec" id="wipe" type="button">Clear all progress</button></div>' : '') +
+      '<p class="front-fine">Built by Maurisha Houston. Meridian Freight, its people, its domain and its console are fictional. Real cmdlet and control names are used because the job asks for them. Progress saves in this browser, per shift, and nothing is sent anywhere.</p>' +
       '</div></div>';
   }
 
@@ -4297,6 +4319,7 @@
   function pLogin(){
     return '<div class="auth"><div class="auth-card"><div class="mark dark"><i></i>Meridian Identity</div><h2>Sign in</h2><p class="faint" style="margin:0 0 14px">Administrator portal · ' + esc(DOM) + '</p>' +
       (S.authErr ? '<div class="note" style="margin:0 0 12px">' + esc(S.authErr) + '</div>' : '') +
+      (S.resumed && !S.authErr ? '<div class="note" style="margin:0 0 12px">Your session expired. The shift is exactly where you left it.</div>' : '') +
       '<label class="fld" for="li-user">Email</label><input class="in" id="li-user" value="' + ME + '" autocomplete="off">' +
       '<label class="fld" for="li-pass">Password</label><input class="in" id="li-pass" type="password" value="correct-horse-staple">' +
       '<div class="row" style="margin-top:16px;justify-content:space-between"><span class="hint" style="margin:0">Privileged account · MFA required</span><button class="btn" id="li-next" type="button">Next</button></div></div>' +
@@ -4457,10 +4480,22 @@
           });
         }, true); }; });
       root.querySelectorAll('[data-pick]').forEach(function(b){ b.onclick = function(){ S.screen = 'pick'; save(); render(); window.scrollTo(0,0); }; });
+      var wipe = document.getElementById('wipe'); if(wipe) wipe.onclick = function(){
+        confirmBox('Clear all progress',
+          '<p>Clears every shift you have started and every score you have recorded, in this browser.</p>' +
+          impact(['Every shift goes back to its opening state.', 'Your recorded scores are removed.'],
+                 'Nothing about this is stored anywhere else, so there is nothing to recover it from.'),
+          'Clear everything', function(){
+            wipeAll();
+            var id = Object.keys(SCN)[0];
+            loadScenario(id); S.screen = 'pick'; render(); window.scrollTo(0,0);
+            toast('All progress cleared');
+          }, true);
+      };
       var b = document.getElementById('begin'); if(b) b.onclick = function(){ S.screen='login'; S.authErr=''; save(); render(); };
       var ln = document.getElementById('li-next'); if(ln){ var go = function(){ if(!document.getElementById('li-pass').value){ S.authErr = 'Enter your password.'; render(); return; } S.mfaNum = 10 + (hash('n'+Date.now()) % 89); S.screen='mfa'; S.authErr=''; save(); render(); }; ln.onclick = go; document.getElementById('li-pass').onkeydown = function(e){ if(e.key==='Enter') go(); }; }
       root.querySelectorAll('[data-n]').forEach(function(k){ k.onclick = function(){
-        if(+k.dataset.n===S.mfaNum){ S.screen='console'; if(!S.signedIn){ S.signedIn = true; S.page='tickets'; } save(); render(); toast('Signed in · session policy: re-authenticate every 8 hours'); }
+        if(+k.dataset.n===S.mfaNum){ S.screen='console'; var back = S.resumed; S.resumed = false; if(!S.signedIn){ S.signedIn = true; S.page='tickets'; } save(); render(); toast(back ? 'Signed back in · your shift is where you left it' : 'Signed in · session policy: re-authenticate every 8 hours'); }
         else { S.screen='login'; S.authErr='Wrong number entered. The sign-in request was denied. Try again.'; save(); render(); }
       }; });
       var dn = document.getElementById('mfa-deny'); if(dn) dn.onclick = function(){ S.screen='login'; S.authErr='You denied the request. If you didn’t start it, report it to Security.'; save(); render(); };
