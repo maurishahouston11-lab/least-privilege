@@ -91,6 +91,7 @@ mechanic added one:
 | 13 | Authentication methods policy, self-service reset, registration campaigns |
 | 14 | A credential vault: safes, policy, check-out, rotation on return |
 | 15 | Entitlement mining, role definition, segregation-of-duties evaluation |
+| 16 | Application dependency graph, order-sensitive teardown, sole-access detection |
 
 Two late pieces were rewrites rather than additions.
 
@@ -124,7 +125,7 @@ shift 10 perfect 14/14   careless 0/14, 25 consequences
 shift 13 perfect 12/12   careless 0/12, 20 consequences
 ```
 
-Thirty runs in all. They exist because the engine is shared: a change made
+Thirty-two runs in all. They exist because the engine is shared: a change made
 for shift 12 can silently break shift 3, and visual review does not catch it.
 
 They earned their keep. Things the suite found that reading the code did not:
@@ -165,6 +166,42 @@ The build now emits a manifest — date, headline, blurb and check counts per
 shift, 7KB — and the roster renders entirely from that. The shift you click
 fetches its own data file; the rest are prefetched quietly once the browser is
 idle, so offline still works. First paint went from 1.45MB to 512KB.
+
+## Switching an application off
+
+Every IAM resource teaches onboarding an application. Shift 10 does it — entity
+IDs, reply URLs, claims, a SCIM connector. Almost nothing teaches the reverse,
+and the reverse is where the interesting failure lives, because decommissioning
+is the only operation on the queue whose failure produces **no symptom**. Nothing
+breaks. Nobody raises a ticket, because a ticket needs somebody to notice, and
+what a bad decommission leaves behind is an absence: a trust nobody watches, a
+group nobody owns, an account with no reason to exist.
+
+That made the page mostly a dependency view. `appDeps` walks one application and
+returns everything pointing at it — the trust, the connector, the groups that
+grant it, the people whose access it is, the policies scoped to it, the
+registrations that authenticate to it, the licences riding on its users.
+
+Two of those needed real computation rather than a lookup.
+
+**Sole access** is "strip this application and the account has nothing left":
+no other application, no group beyond the all-staff baseline, no directory role.
+It reuses `entsOf` from the role-mining shift, which is why that function was
+worth getting right.
+
+**An orphaned group** is the one people get wrong, so the data models the
+distinction rather than inferring it. One group was created for the rollout and
+grants only this application; it goes. The other has been the Finance share
+group for years and was reused to grant the app, which is the ordinary way a
+group comes to mean two things. The ticket asks for both to be cleared out, and
+doing what was asked is an outage.
+
+The grading turns on **order**, so the state records a sequence rather than a set
+of booleans. Deprovisioning has to run through the connector before the connector
+is removed — the connector is the only route the directory has into the vendor's
+system, and deleting it first strands every account it created, permanently, in a
+system the company is about to stop having a contract with. The console lets you
+do it backwards and says nothing until the shift ends, which is the point.
 
 ## Mining a role model
 

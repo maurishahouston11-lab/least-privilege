@@ -2,8 +2,8 @@
   var SCN = {};
   (function(){
     var pick = function(key, tag){ var d = window[key]; if(!d){ var el = document.getElementById(tag); if(el) try{ d = JSON.parse(el.textContent); }catch(e){} } return d; };
-    var a = pick('LP_DATA', 'scenario-data'), b = pick('LP_DATA2', 'scenario-data-2'), c = pick('LP_DATA3', 'scenario-data-3'), f = pick('LP_DATA4', 'scenario-data-4'), g5 = pick('LP_DATA5', 'scenario-data-5'), g6 = pick('LP_DATA6', 'scenario-data-6'), g7 = pick('LP_DATA7', 'scenario-data-7'), g8 = pick('LP_DATA8', 'scenario-data-8'), g9 = pick('LP_DATA9', 'scenario-data-9'), g10 = pick('LP_DATA10', 'scenario-data-10'), g11 = pick('LP_DATA11', 'scenario-data-11'), g12 = pick('LP_DATA12', 'scenario-data-12'), g13 = pick('LP_DATA13', 'scenario-data-13'), g14 = pick('LP_DATA14', 'scenario-data-14'), g15 = pick('LP_DATA15', 'scenario-data-15');
-    if(a) SCN.s1 = a; if(b) SCN.s2 = b; if(c) SCN.s3 = c; if(f) SCN.s4 = f; if(g5) SCN.s5 = g5; if(g6) SCN.s6 = g6; if(g7) SCN.s7 = g7; if(g8) SCN.s8 = g8; if(g9) SCN.s9 = g9; if(g10) SCN.s10 = g10; if(g11) SCN.s11 = g11; if(g12) SCN.s12 = g12; if(g13) SCN.s13 = g13; if(g14) SCN.s14 = g14; if(g15) SCN.s15 = g15;
+    var a = pick('LP_DATA', 'scenario-data'), b = pick('LP_DATA2', 'scenario-data-2'), c = pick('LP_DATA3', 'scenario-data-3'), f = pick('LP_DATA4', 'scenario-data-4'), g5 = pick('LP_DATA5', 'scenario-data-5'), g6 = pick('LP_DATA6', 'scenario-data-6'), g7 = pick('LP_DATA7', 'scenario-data-7'), g8 = pick('LP_DATA8', 'scenario-data-8'), g9 = pick('LP_DATA9', 'scenario-data-9'), g10 = pick('LP_DATA10', 'scenario-data-10'), g11 = pick('LP_DATA11', 'scenario-data-11'), g12 = pick('LP_DATA12', 'scenario-data-12'), g13 = pick('LP_DATA13', 'scenario-data-13'), g14 = pick('LP_DATA14', 'scenario-data-14'), g15 = pick('LP_DATA15', 'scenario-data-15'), g16 = pick('LP_DATA16', 'scenario-data-16');
+    if(a) SCN.s1 = a; if(b) SCN.s2 = b; if(c) SCN.s3 = c; if(f) SCN.s4 = f; if(g5) SCN.s5 = g5; if(g6) SCN.s6 = g6; if(g7) SCN.s7 = g7; if(g8) SCN.s8 = g8; if(g9) SCN.s9 = g9; if(g10) SCN.s10 = g10; if(g11) SCN.s11 = g11; if(g12) SCN.s12 = g12; if(g13) SCN.s13 = g13; if(g14) SCN.s14 = g14; if(g15) SCN.s15 = g15; if(g16) SCN.s16 = g16;
     // The multi-file build ships one scenario eagerly and a manifest for the
     // rest: every data file used to load before the roster could paint, which
     // is a megabyte nobody needs to play one shift. A stub carries exactly what
@@ -2911,12 +2911,271 @@
     var tabs = [['access','Access']];
     if(hasSso) tabs.push(['sso','Single sign-on']);
     if(hasScim) tabs.push(['prov','Provisioning']);
+    var canDecom = !!(D.decommission && D.decommission.app === a.name);
+    if(canDecom) tabs.push(['decom','Decommission']);
+    if(tab==='decom' && !canDecom) tab = 'access';
     var tabbar = tabs.length>1 ? '<div class="chips">' + tabs.map(function(t){ return '<button class="chip' + (tab===t[0]?' on':'') + '" data-apptab="' + t[0] + '" type="button">' + t[1] + '</button>'; }).join('') + '</div>' : '';
     var head = '<div class="crumbs"><button data-nav="apps" type="button">Applications</button> / ' + esc(a.name) + '</div><h1 class="pg">' + esc(a.name) + '</h1><p class="sub">' + esc(a.desc) + ' · Owner: ' + esc(a.owner) + ' · Roles: ' + esc(a.roles.join(', ')) + '</p>' + tabbar;
     if(tab==='sso') return head + ssoCard(a);
     if(tab==='prov') return head + scimCard(a);
+    if(tab==='decom') return head + decomCard(a);
     return head +
       card('Group assignments', '', table(['Group','Role','Members'], grp, 'None.')) + card('Direct user assignments', '<span class="faint" style="font-size:12.5px">Not removed by group changes</span>', table(['User','Role','Assigned',''], rows.join(''), 'No direct assignments.'));
+  }
+
+
+  // ---------- decommissioning an application ----------
+  // Retiring an application is the only identity operation whose failure has no
+  // symptom. Nothing breaks, nobody complains, and what is left behind is an
+  // absence: a trust nobody watches, a group nobody owns, an account with no
+  // reason to exist. So this page is mostly a dependency view, and the grading
+  // is mostly about order.
+
+  function decomCfg(){ return D.decommission || null; }
+  function decomState(n){
+    S.decom = S.decom || {};
+    if(!S.decom[n]) S.decom[n] = { scanned:false, order:[], groups:{}, people:{}, retired:false, ssoGone:false, scimGone:false, deprovisioned:false, regGone:false, caDone:false, licReclaimed:false };
+    return S.decom[n];
+  }
+  function decomMark(n, step){
+    var st = decomState(n);
+    if(st.order.indexOf(step) < 0) st.order.push(step);
+  }
+  function decomBefore(n, a, b){
+    var o = decomState(n).order, ia = o.indexOf(a), ib = o.indexOf(b);
+    return ia >= 0 && ib >= 0 && ia < ib;
+  }
+  // Everything that points at this application. The non-obvious half is the
+  // point: the group that also grants something else, the person who has
+  // nothing else, the policy that will stop matching anything.
+  function appDeps(name){
+    var a = appBy(name) || {};
+    var direct = [], viaGroup = [], sole = [], groups = [], policies = [], regs = [], lic = 0;
+    allUsers().forEach(function(u){
+      if(u.guest) return;
+      var has = (u.apps||[]).some(function(x){ return x.app===name; });
+      if(!has) return;
+      direct.push(u);
+      // "sole access" means: strip this application and the account has no
+      // remaining application, no group beyond the all-staff baseline, and no
+      // directory role. An account like that exists only for the app.
+      var others = (u.apps||[]).filter(function(x){ return x.app!==name; }).length;
+      var gs = entsOf(u).filter(function(e){
+        if(e.indexOf('APP:' + name + ':')===0) return false;
+        if(e === 'GRP-AllStaff') return false;
+        return true;
+      });
+      if(!others && !gs.length) sole.push(u);
+    });
+    Object.keys(a.viaGroup || {}).forEach(function(g){
+      // a group is orphaned by the retirement only if this app was the only
+      // thing it granted; the console can see that from the group's own record
+      var gg = G(g) || {};
+      var onlyThis = !!gg.grantsOnly && gg.grantsOnly === name;
+      groups.push({ name:g, role:a.viaGroup[g], members:members(g).length, onlyThis:onlyThis, alsoGrants:gg.alsoGrants || '' });
+      viaGroup.push(g);
+    });
+    (S.ca || []).forEach(function(p){
+      var t = (p.apps || '') + ' ' + (p.assignment || '');
+      if(t.indexOf(name) >= 0) policies.push(p);
+    });
+    (S.appRegs || []).forEach(function(r){ if((r.forApp||'') === name) regs.push(r); });
+    direct.forEach(function(u){ if(u.lic) lic++; });
+    return { app:a, direct:direct, sole:sole, groups:groups, policies:policies, regs:regs, lic:lic,
+             sso:sso(name), scim:scim(name) };
+  }
+
+  function decomCard(a){
+    var cfg = decomCfg();
+    var st = decomState(a.name);
+    var d = appDeps(a.name);
+    if(!st.scanned){
+      return card('Decommission', '',
+        '<div class="card-b"><p>' + (cfg && cfg.app===a.name
+            ? 'This application is scheduled for retirement on <b>' + esc(cfg.date||'') + '</b>.'
+            : 'Nothing has been scanned for this application.') + '</p>' +
+        '<p class="faint">Switching an application off is not one action. Before anything is removed it is worth knowing what points at it — the trust, the provisioning connector, the groups that grant it, the people who have nothing else, the policies scoped to it, and the registrations that authenticate to it. None of those raise a ticket when they are left behind.</p>' +
+        '<div class="row" style="margin-top:14px"><button class="btn" data-decscan="' + esc(a.name) + '" type="button">Find what depends on it</button></div></div>');
+    }
+    var rows = [];
+    var line = function(what, detail, state, action){
+      rows.push('<tr><td><b>' + esc(what) + '</b><div class="faint" style="font-size:12.5px">' + detail + '</div></td>' +
+        '<td>' + state + '</td><td>' + (action || '') + '</td></tr>');
+    };
+    line('Federation trust', d.sso ? 'SAML 2.0 · ' + esc((d.sso.entityId||'no entity ID')) : 'No trust configured',
+      st.ssoGone ? '<span class="pill en">Removed</span>' : d.sso ? '<span class="pill warn">Live</span>' : '<span class="faint">—</span>',
+      (d.sso && !st.ssoGone) ? '<button class="btn sec sm" data-decsso="' + esc(a.name) + '" type="button">Remove the trust</button>' : '');
+    line('Provisioning connector', d.scim ? 'SCIM · ' + esc(d.scim.endpoint||'') : 'No connector',
+      st.scimGone ? '<span class="pill en">Removed</span>' : st.deprovisioned ? '<span class="pill warn">Users deprovisioned, connector still live</span>' : d.scim ? '<span class="pill warn">Live</span>' : '<span class="faint">—</span>',
+      (d.scim && !st.scimGone) ? '<div class="row" style="gap:6px">' +
+        (!st.deprovisioned ? '<button class="btn sec sm" data-decdep="' + esc(a.name) + '" type="button">Deprovision the users</button>' : '') +
+        '<button class="btn sec sm" data-decconn="' + esc(a.name) + '" type="button">Remove the connector</button></div>' : '');
+    d.groups.forEach(function(g){
+      var dec = st.groups[g.name];
+      line(g.name, g.members + ' members · grants ' + esc(g.role) + (g.alsoGrants ? ' · <b>also grants ' + esc(g.alsoGrants) + '</b>' : ''),
+        dec === 'delete' ? '<span class="pill en">Deleted</span>' : dec === 'keep' ? '<span class="pill en">Kept</span>' : '<span class="pill warn">Undecided</span>',
+        dec ? '' : '<div class="row" style="gap:6px"><button class="btn sec sm" data-decgrp="' + esc(g.name) + '|keep" type="button">Keep</button>' +
+          '<button class="btn sec sm" data-decgrp="' + esc(g.name) + '|delete" type="button">Delete</button></div>');
+    });
+    d.sole.forEach(function(u){
+      var dec = st.people[u.upn];
+      line(u.name, esc(u.title||'') + ' · <b>no access left once this application is gone</b>',
+        dec === 'disable' ? '<span class="pill en">Disabled</span>' : dec === 'keep' ? '<span class="pill en">Left enabled</span>' : '<span class="pill warn">Undecided</span>',
+        dec ? '' : '<div class="row" style="gap:6px"><button class="btn sec sm" data-decper="' + esc(u.upn) + '|keep" type="button">Leave enabled</button>' +
+          '<button class="btn sec sm" data-decper="' + esc(u.upn) + '|disable" type="button">Disable</button></div>');
+    });
+    d.policies.forEach(function(p){
+      line('Conditional access · ' + p.name, 'Scoped to this application',
+        st.caDone ? '<span class="pill en">Handled</span>' : '<span class="pill warn">Will match nothing</span>',
+        st.caDone ? '' : '<button class="btn sec sm" data-decca="' + esc(a.name) + '" type="button">Handle it</button>');
+    });
+    d.regs.forEach(function(r){
+      line('App registration · ' + r.name, (r.secrets||[]).length + ' secret(s) · authenticates to this application',
+        st.regGone ? '<span class="pill en">Removed</span>' : '<span class="pill warn">Live</span>',
+        st.regGone ? '' : '<button class="btn sec sm" data-decreg="' + esc(a.name) + '" type="button">Remove it</button>');
+    });
+    if(d.lic) line('Licences', d.lic + ' assigned through this application’s users',
+      st.licReclaimed ? '<span class="pill en">Reclaimed</span>' : '<span class="pill warn">Still billing</span>',
+      st.licReclaimed ? '' : '<button class="btn sec sm" data-declic="' + esc(a.name) + '" type="button">Reclaim</button>');
+
+    var warn = '';
+    if(d.scim && st.scimGone && !st.deprovisioned)
+      warn += '<div class="banner bad"><span>The connector was removed before the users were deprovisioned. Every account in the application is now stranded there: the directory can no longer reach it to remove them, and it never will again.</span></div>';
+    if(cfg && cfg.retain)
+      warn += '<div class="banner warn"><span><b>' + esc(cfg.retain.who) + ':</b> ' + esc(cfg.retain.why) + '</span></div>';
+
+    return card('Decommission', st.retired ? '<span class="pill en">Retired</span>' : '<span class="faint">' + (cfg ? 'Scheduled ' + esc(cfg.date||'') : '') + '</span>',
+      '<div class="card-b">' + warn + '</div>' +
+      table(['What points at it','State',''], rows.join(''), 'Nothing depends on this application.'));
+  }
+
+  function decomScan(n){
+    act('Scan application dependencies', n, function(){ decomState(n).scanned = true; decomMark(n,'scan'); },
+      'Dependencies found for ' + n,
+      { cat:'Application management', detail:'Dependency scan run against ' + n, mins:20 });
+  }
+  function decomSso(n){
+    var s = sso(n);
+    openModal('Remove the federation trust',
+      '<p>Removes the SAML trust for <b>' + esc(n) + '</b> on this side.</p>' +
+      '<div class="banner warn"><span>The other half lives in the application. A reply URL left configured there, on a domain that lapses with the contract, is somebody else’s open redirect later. Confirm with the owner that their side is torn down too.</span></div>' +
+      '<label class="fld" for="dx-w">What the application owner confirmed</label><input class="in" id="dx-w" placeholder="Who confirmed their side is being removed">',
+      'Remove the trust', function(){
+        var w = (document.getElementById('dx-w').value||'').trim();
+        if(w.length < 3) return false;
+        act('Remove federation trust', n, function(){
+          decomState(n).ssoGone = true; decomMark(n,'sso');
+          S.sso = S.sso || {}; S.sso[n] = null;
+        }, 'Federation trust removed for ' + n,
+          { cat:'Application management', detail:n + ' · SAML trust removed · confirmed with ' + w, mins:10 });
+      });
+  }
+  function decomDeprov(n){
+    confirmBox('Deprovision the users',
+      '<p>Runs the connector one last time to remove every account this directory created in <b>' + esc(n) + '</b>.</p>' +
+      impact(['Accounts in the application are removed or disabled according to the connector’s unassignment behaviour.',
+              'This has to happen while the connector still exists. Afterwards the directory has no way to reach the application at all.'],
+             'This is the step whose order matters. Nothing warns you if you skip it.'),
+      'Deprovision', function(){
+        act('Deprovision application users', n, function(){
+          decomState(n).deprovisioned = true; decomMark(n,'deprovision');
+          var s = scim(n); if(s){ s.orphans = []; s.state = 'Deprovisioned'; }
+        }, 'Users deprovisioned from ' + n,
+          { cat:'Provisioning', detail:n + ' · final deprovisioning cycle run before teardown', mins:25 });
+      });
+  }
+  function decomConn(n){
+    var st = decomState(n);
+    var body = st.deprovisioned
+      ? '<p>The users are already out. Removing the connector now is the tidy-up.</p>'
+      : '<p>The users have <b>not</b> been deprovisioned.</p>' +
+        '<div class="banner bad"><span>Remove the connector now and every account the directory created in ' + esc(n) + ' stays there, live, for ever. There is no route back: the connector is how the directory reaches the application, and you are about to delete it.</span></div>';
+    confirmBox('Remove the provisioning connector', body, 'Remove the connector', function(){
+      act('Remove provisioning connector', n, function(){
+        decomState(n).scimGone = true; decomMark(n,'connector');
+        S.scim = S.scim || {}; S.scim[n] = null;
+      }, 'Provisioning connector removed for ' + n,
+        { cat:'Provisioning', detail:n + ' · SCIM connector removed', mins:8 });
+    }, !st.deprovisioned);
+  }
+  function decomGroup(key){
+    var p = key.split('|'), g = p[0], dec = p[1];
+    var gg = G(g) || {};
+    var body = dec === 'delete'
+      ? '<p>Deletes <b>' + esc(g) + '</b> and everything it grants.</p>' +
+        (gg.alsoGrants ? '<div class="banner bad"><span>This group also grants <b>' + esc(gg.alsoGrants) + '</b>. Deleting it takes that away from ' + members(g).length + ' people, and the application being retired has nothing to do with it.</span></div>' : '') +
+        '<label class="fld" for="dg-w">Why it can go</label><input class="in" id="dg-w" placeholder="What it granted, and why nothing else needs it">'
+      : '<p>Keeps <b>' + esc(g) + '</b>.</p>' +
+        '<label class="fld" for="dg-w">Why it stays</label><input class="in" id="dg-w" placeholder="What else it grants">';
+    openModal(dec === 'delete' ? 'Delete ' + g : 'Keep ' + g, body, dec === 'delete' ? 'Delete it' : 'Keep it', function(){
+      var w = (document.getElementById('dg-w').value||'').trim();
+      if(w.length < 3) return false;
+      act(dec === 'delete' ? 'Delete group' : 'Keep group', g, function(){
+        var n = (decomCfg()||{}).app; decomState(n).groups[g] = dec;
+        if(dec === 'delete'){
+          D.groups = D.groups.filter(function(x){ return x.name !== g; });
+          allUsers().forEach(function(u){
+            if(u.ad && u.ad.groups) u.ad.groups = u.ad.groups.filter(function(x){ return (typeof x==='string'?x:x&&x.g) !== g; });
+            u.groups = (u.groups||[]).filter(function(x){ return (typeof x==='string'?x:x&&x.g) !== g; });
+          });
+        }
+      }, dec === 'delete' ? g + ' deleted' : g + ' kept',
+        { cat:'Group management', detail:g + ' · ' + dec + ' · ' + w, mins:6 });
+    });
+  }
+  function decomPerson(key){
+    var p = key.split('|'), upn = p[0], dec = p[1], u = U(upn);
+    if(!u) return;
+    var body = dec === 'disable'
+      ? '<p><b>' + esc(u.name) + '</b> has no access left once ' + esc((decomCfg()||{}).app||'the application') + ' is gone.</p>' +
+        '<label class="fld" for="dp-w">Confirmed with</label><input class="in" id="dp-w" placeholder="Who confirmed the account is no longer needed">'
+      : '<p>Leaves <b>' + esc(u.name) + '</b> enabled.</p>' +
+        '<div class="banner warn"><span>An enabled account with no access and no purpose is a dormant account. It will appear on the reporting page next quarter and somebody will ask about it then.</span></div>' +
+        '<label class="fld" for="dp-w">Why it stays</label><input class="in" id="dp-w" placeholder="What this account is still for">';
+    openModal(dec === 'disable' ? 'Disable ' + u.name : 'Leave ' + u.name + ' enabled', body, dec === 'disable' ? 'Disable' : 'Leave enabled', function(){
+      var w = (document.getElementById('dp-w').value||'').trim();
+      if(w.length < 3) return false;
+      act(dec === 'disable' ? 'Disable account' : 'Leave account enabled', u.name, function(){
+        var n = (decomCfg()||{}).app; decomState(n).people[upn] = dec;
+        if(dec === 'disable'){ u.status = 'Disabled'; if(u.ad) u.ad.enabled = false; }
+      }, dec === 'disable' ? u.name + ' disabled' : u.name + ' left enabled',
+        { cat:'User management', detail:u.name + ' · ' + dec + ' · ' + w, mins:8 });
+    }, null, dec === 'keep');
+  }
+  function decomCA(n){
+    confirmBox('Conditional access scoped to ' + n,
+      '<p>The policy targets an application that is going away.</p>' +
+      impact(['A policy scoped to nothing does not fail — it simply stops applying, silently.',
+              'If its controls were the reason something else was safe, that reason has gone with it.']),
+      'Retire the policy', function(){
+        act('Retire conditional access policy', n, function(){ decomState(n).caDone = true; decomMark(n,'ca'); },
+          'Policy retired with the application',
+          { cat:'Conditional access', detail:'Policy scoped to ' + n + ' retired alongside it', mins:8 });
+      });
+  }
+  function decomReg(n){
+    confirmBox('Remove the app registration',
+      '<p>The registration and its secrets exist to authenticate to <b>' + esc(n) + '</b>.</p>' +
+      impact(['Left in place, the secret keeps rotating and the registration keeps appearing in reports as something live.',
+              'Check nothing else uses it first — a registration created for one application is often borrowed by a second.']),
+      'Remove it', function(){
+        act('Remove app registration', n, function(){
+          decomState(n).regGone = true; decomMark(n,'reg');
+          S.appRegs = S.appRegs.filter(function(r){ return (r.forApp||'') !== n; });
+        }, 'App registration removed',
+          { cat:'Application management', detail:'Registration for ' + n + ' removed with the application', mins:8 });
+      });
+  }
+  function decomLic(n){
+    confirmBox('Reclaim the licences',
+      '<p>Licences assigned to the people who used <b>' + esc(n) + '</b>.</p>' +
+      impact(['Reclaiming what is genuinely unused is the part of a decommission that pays for itself.',
+              'Only the licences belonging to accounts with nothing left are reclaimed — people who still work here keep theirs.']),
+      'Reclaim', function(){
+        act('Reclaim licences', n, function(){ decomState(n).licReclaimed = true; decomMark(n,'lic'); },
+          'Unused licences reclaimed',
+          { cat:'Licensing', detail:'Licences reclaimed following the retirement of ' + n, mins:10 });
+      });
   }
 
   // ---- Single sign-on -------------------------------------------------
@@ -3684,6 +3943,21 @@
   // ---------- grading ----------
   function test(c){
     if(c.mined) return !!(S.rbac && S.rbac.mined);
+    if(c.decom){
+      var ds = (S.decom||{})[c.decom];
+      if(!ds) return false;
+      if(c.scanned) return !!ds.scanned;
+      if(c.ssoGone) return !!ds.ssoGone;
+      if(c.deprovisioned) return !!ds.deprovisioned;
+      if(c.connGone) return !!ds.scimGone;
+      if(c.caDone) return !!ds.caDone;
+      if(c.regGone) return !!ds.regGone;
+      if(c.licReclaimed) return !!ds.licReclaimed;
+      if(c.orderOk) return decomBefore(c.decom, 'deprovision', 'connector');
+      if(c.groupIs) return ds.groups[c.groupIs] === (c.as || 'delete');
+      if(c.personIs) return ds.people[c.personIs] === (c.as || 'disable');
+      return false;
+    }
     if(c.role || c.roleFor){
       var rr = (S.rbac && S.rbac.roles || []).filter(function(x){ return c.roleFor ? x.dept===c.roleFor : x.name===c.role; })[0];
       if(c.defined) return !!rr;
@@ -4283,6 +4557,15 @@
     on('[data-svcrot]', function(b){ svcRotate(b.dataset.svcrot); });
     on('[data-reportobj]', function(b){ reportObj(b.dataset.reportobj); });
     on('[data-job]', function(b){ var p = split(b.dataset.job); jobAction(p[0], +p[1], p[2]); });
+    on('[data-decscan]', function(b){ decomScan(b.dataset.decscan); });
+    on('[data-decsso]', function(b){ decomSso(b.dataset.decsso); });
+    on('[data-decdep]', function(b){ decomDeprov(b.dataset.decdep); });
+    on('[data-decconn]', function(b){ decomConn(b.dataset.decconn); });
+    on('[data-decgrp]', function(b){ decomGroup(b.dataset.decgrp); });
+    on('[data-decper]', function(b){ decomPerson(b.dataset.decper); });
+    on('[data-decca]', function(b){ decomCA(b.dataset.decca); });
+    on('[data-decreg]', function(b){ decomReg(b.dataset.decreg); });
+    on('[data-declic]', function(b){ decomLic(b.dataset.declic); });
     on('[data-rmine]', function(){ rbacMine(); });
     on('[data-rdef]', function(b){ rbacDefine(b.dataset.rdef); });
     on('[data-rasg]', function(b){ rbacAssign(b.dataset.rasg); });
