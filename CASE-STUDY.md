@@ -89,6 +89,8 @@ mechanic added one:
 | 11 | An inbound HR feed as source of authority, rename that preserves the object |
 | 12 | Guest lifecycle, collaboration settings, access packages |
 | 13 | Authentication methods policy, self-service reset, registration campaigns |
+| 14 | A credential vault: safes, policy, check-out, rotation on return |
+| 15 | Entitlement mining, role definition, segregation-of-duties evaluation |
 
 Two late pieces were rewrites rather than additions.
 
@@ -122,7 +124,7 @@ shift 10 perfect 14/14   careless 0/14, 25 consequences
 shift 13 perfect 12/12   careless 0/12, 20 consequences
 ```
 
-Twenty-six runs in all. They exist because the engine is shared: a change made
+Thirty runs in all. They exist because the engine is shared: a change made
 for shift 12 can silently break shift 3, and visual review does not catch it.
 
 They earned their keep. Things the suite found that reading the code did not:
@@ -157,12 +159,55 @@ could reach the nav and then hit a wall at every record. Fixed once in the bind
 step rather than table by table: each clickable row now gets `tabindex`, a
 button role, an `aria-label` from its first cell and Enter/Space handling.
 
-**The first load was 1.45MB, and all thirteen shifts loaded before you picked
+**The first load was 1.45MB, and every shift loaded before you picked
 one.** A megabyte of that was scenario data nobody needs to play a single shift.
 The build now emits a manifest — date, headline, blurb and check counts per
 shift, 7KB — and the roster renders entirely from that. The shift you click
 fetches its own data file; the rest are prefetched quietly once the browser is
 idle, so offline still works. First paint went from 1.45MB to 512KB.
+
+## Mining a role model
+
+The last shift is the only one where nothing is broken and nobody is attacking
+anything. It is a project day, and the interesting failure is a design mistake
+rather than an incident.
+
+Role mining is bottom-up by definition: you cluster on the entitlements people
+actually hold and see what falls out. The tempting shortcut is to write the org
+chart into a spreadsheet and call the departments roles, which produces a model
+that describes what management believes access looks like rather than what it
+is. So the console computes the mining for real — every enabled person's access
+flattened across on-premises groups, cloud groups, application roles and
+directory roles, counted per department — and the page leads with the number of
+entitlements held by exactly one person, because that number is the whole
+argument.
+
+Three decisions follow from it, and the engine had to make all three available
+rather than merely gradeable:
+
+**Intersection, not union.** A role defined as everything a department holds
+grants everyone the most privileged member's access, quietly, under the heading
+of governance. The define dialog ticks what everyone already has and leaves the
+rest to the analyst — including the things one person holds, because a mistake
+you cannot make is a mistake nobody learns. Tick the group that lets the CFO
+approve payments and the dialog says, before the role exists, that it is held by
+one of five people and that including it gives it to all five.
+
+**Segregation of duties, evaluated as the role is built.** Checking for a
+conflict after a role is live means everyone already has it. The scenario
+declares the pairs that must not co-occur, and the check runs on the selection
+as it changes.
+
+**Migration order.** Assigning a role adds access and breaks nothing; removing
+the direct grants takes it away. The console enforces the order — it refuses to
+strip somebody who has not been assigned a role, and tells you what the role does
+*not* cover so that access is not silently lost with it.
+
+Building it surfaced a bug in my own assumption. `entsOf` read cloud group
+membership as an array of strings; the engine normalises it into objects at boot
+(`{g, type, exp, why, src}`), and directory roles into another shape again.
+The mining worked on the on-premises half and threw on the cloud half — which is
+a fair summary of what hybrid identity does to anyone who assumes one shape.
 
 ## The reporting page
 

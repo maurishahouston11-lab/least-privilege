@@ -1,8 +1,8 @@
 # Least Privilege
 
-**An identity and access management simulator.** Fourteen shifts on the IAM queue
+**An identity and access management simulator.** Fifteen shifts on the IAM queue
 at a fictional freight company, each one a full working day, in order, across
-twenty-nine months — the same directory, the same people, and whatever the last
+thirty-two months — the same directory, the same people, and whatever the last
 shift left behind.
 
 **[▶ Play it →](https://maurishahouston11-lab.github.io/least-privilege/)**  ·
@@ -48,8 +48,9 @@ Progress is kept per shift in your browser. Nothing is sent anywhere.
 | 12 | **Outsiders** | Guests nobody sponsors, an external auditor inside the Finance group, and an access package that grants dock systems to whoever asks, for ever |
 | 13 | **Something You Have** | A second phone number registered overnight, self-service reset that was never switched on, and a security key rollout that reaches nobody unless you make it |
 | 14 | **The Vault** | Privileged passwords in a shared document, a safe that never rotates on return, a credential checked out six days ago, and the emergency accounts locked behind the thing they exist to recover from |
+| 15 | **The Role Model** | Mining what people actually hold, a role that would hand payment approval to everyone who gets it, three outliers that look identical in the report, and a migration ordered so nobody is locked out |
 
-**88 tickets, 419 scored steps.**
+**94 tickets, 446 scored steps.**
 
 ## What the work looks like
 
@@ -77,6 +78,17 @@ Reporting is computed live from the same objects every other page edits, so a
 number moves the moment you fix the thing behind it.
 
 ![Reporting](docs/07-reporting.png)
+
+Role mining reads the access people hold rather than the org chart, so the
+departments that look tidy on paper and the ones that aren't are told apart by
+evidence.
+
+![Role mining](docs/08-role-mining.png)
+
+The mistakes are offered, not hidden. Tick the entitlement one person holds and
+the console says what including it would do, before the role exists.
+
+![Defining a role](docs/09-role-define.png)
 
 The shell takes pipelines, so "find the ones where X and count them" is one line.
 
@@ -122,6 +134,11 @@ what it cost — three months later, in the specific.
   becoming permanent
 - **Kerberos** — SPNs and offline cracking, gMSA, replication rights, the
   two-reset `krbtgt` procedure and the gap it requires
+- **Role mining** — entitlements mined from what people hold, coverage against
+  a department, the intersection versus the union, exceptions told apart from
+  privilege creep, segregation of duties checked as a role is defined rather
+  than after, migration ordered so the role lands before the grant it replaces,
+  and an owner and recertification cycle on every role
 - **Governance** — access reviews and certification, segregation of duties,
   litigation hold, audit evidence
 - **Reporting** — coverage against a target, dormant and orphaned accounts,
@@ -176,7 +193,7 @@ Adding a shift means writing a data file, not touching the engine.
 
 Each shift is verified by two automated playthroughs — one working it by the
 book, one working it carelessly — asserting the exact score and the exact set of
-consequences. Twenty-eight runs in all, and they're what catches a regression when
+consequences. Thirty runs in all, and they're what catches a regression when
 the engine changes.
 
 [The full write-up is here →](CASE-STUDY.md)

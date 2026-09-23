@@ -2,8 +2,8 @@
   var SCN = {};
   (function(){
     var pick = function(key, tag){ var d = window[key]; if(!d){ var el = document.getElementById(tag); if(el) try{ d = JSON.parse(el.textContent); }catch(e){} } return d; };
-    var a = pick('LP_DATA', 'scenario-data'), b = pick('LP_DATA2', 'scenario-data-2'), c = pick('LP_DATA3', 'scenario-data-3'), f = pick('LP_DATA4', 'scenario-data-4'), g5 = pick('LP_DATA5', 'scenario-data-5'), g6 = pick('LP_DATA6', 'scenario-data-6'), g7 = pick('LP_DATA7', 'scenario-data-7'), g8 = pick('LP_DATA8', 'scenario-data-8'), g9 = pick('LP_DATA9', 'scenario-data-9'), g10 = pick('LP_DATA10', 'scenario-data-10'), g11 = pick('LP_DATA11', 'scenario-data-11'), g12 = pick('LP_DATA12', 'scenario-data-12'), g13 = pick('LP_DATA13', 'scenario-data-13'), g14 = pick('LP_DATA14', 'scenario-data-14');
-    if(a) SCN.s1 = a; if(b) SCN.s2 = b; if(c) SCN.s3 = c; if(f) SCN.s4 = f; if(g5) SCN.s5 = g5; if(g6) SCN.s6 = g6; if(g7) SCN.s7 = g7; if(g8) SCN.s8 = g8; if(g9) SCN.s9 = g9; if(g10) SCN.s10 = g10; if(g11) SCN.s11 = g11; if(g12) SCN.s12 = g12; if(g13) SCN.s13 = g13; if(g14) SCN.s14 = g14;
+    var a = pick('LP_DATA', 'scenario-data'), b = pick('LP_DATA2', 'scenario-data-2'), c = pick('LP_DATA3', 'scenario-data-3'), f = pick('LP_DATA4', 'scenario-data-4'), g5 = pick('LP_DATA5', 'scenario-data-5'), g6 = pick('LP_DATA6', 'scenario-data-6'), g7 = pick('LP_DATA7', 'scenario-data-7'), g8 = pick('LP_DATA8', 'scenario-data-8'), g9 = pick('LP_DATA9', 'scenario-data-9'), g10 = pick('LP_DATA10', 'scenario-data-10'), g11 = pick('LP_DATA11', 'scenario-data-11'), g12 = pick('LP_DATA12', 'scenario-data-12'), g13 = pick('LP_DATA13', 'scenario-data-13'), g14 = pick('LP_DATA14', 'scenario-data-14'), g15 = pick('LP_DATA15', 'scenario-data-15');
+    if(a) SCN.s1 = a; if(b) SCN.s2 = b; if(c) SCN.s3 = c; if(f) SCN.s4 = f; if(g5) SCN.s5 = g5; if(g6) SCN.s6 = g6; if(g7) SCN.s7 = g7; if(g8) SCN.s8 = g8; if(g9) SCN.s9 = g9; if(g10) SCN.s10 = g10; if(g11) SCN.s11 = g11; if(g12) SCN.s12 = g12; if(g13) SCN.s13 = g13; if(g14) SCN.s14 = g14; if(g15) SCN.s15 = g15;
     // The multi-file build ships one scenario eagerly and a manifest for the
     // rest: every data file used to load before the roster could paint, which
     // is a megabyte nobody needs to play one shift. A stub carries exactly what
@@ -1537,6 +1537,7 @@
       case 'gpo': return pGPO();
       case 'ca': return pCA();
       case 'vault': return pVault();
+      case 'rbac': return pRBAC();
       case 'report': return pReport();
       case 'authm': return pAuthM();
       case 'ext': return pExt();
@@ -1588,6 +1589,351 @@
     v.safes.forEach(function(s){ (s.accounts||[]).forEach(function(a){ if(a.id===id){ a._safe = s; hit = a; } }); }); return hit; }
   function vLog(entry){ var v = vault(); v.log = v.log || []; v.log.unshift(entry); }
   function vOverdue(a){ return a.checkedOutBy && a.dueAt != null && S.clock > a.dueAt; }
+
+  // ---------- role mining ----------
+  // The whole point of this page is that a role model built from job titles is a
+  // reorganisation, not a control. Everything here is computed from the access
+  // people actually hold, which is why the numbers disagree with the org chart.
+
+  function rbacCfg(){ return D.roleModel || null; }
+  function rbacState(){
+    if(!S.rbac) S.rbac = { mined:false, roles:[], exceptions:{}, assigned:{}, stripped:{}, flagged:[] };
+    return S.rbac;
+  }
+  // A person's entitlements, flattened across both halves of the identity and the
+  // applications, because a role model that only knows about AD groups models a
+  // third of the access and reports itself as complete.
+  function entsOf(u){
+    if(!u) return [];
+    var out = [];
+    var add = function(k){ if(k && out.indexOf(k)<0) out.push(k); };
+    ((u.ad && u.ad.groups) || []).forEach(function(g){ add(typeof g === 'string' ? g : g && g.g); });
+    (u.groups || []).forEach(function(g){ add(typeof g === 'string' ? g : g && g.g); });
+    (u.apps || []).forEach(function(a){ add('APP:' + a.app + ':' + a.role); });
+    (u.roles || []).forEach(function(r){ add('ROLE:' + (typeof r === 'string' ? r : (r && (r.r || r.role)))); });
+    return out.sort();
+  }
+  function entLabel(e){
+    if(e.indexOf('APP:')===0){ var p = e.split(':'); return p[1] + ' — ' + p[2]; }
+    if(e.indexOf('ROLE:')===0) return e.slice(5) + ' (directory role)';
+    return e;
+  }
+  function entKind(e){
+    if(e.indexOf('APP:')===0) return 'Application role';
+    if(e.indexOf('ROLE:')===0) return 'Directory role';
+    var g = G(e); return g && g.tier === 'privileged' ? 'Privileged group' : g && g.tier === 'sensitive' ? 'Sensitive group' : 'Group';
+  }
+  function entSensitive(e){
+    if(e.indexOf('ROLE:')===0) return true;
+    var g = G(e); return !!(g && (g.tier==='privileged' || g.tier==='sensitive'));
+  }
+  function rbacPeople(dept){
+    return allUsers().filter(function(u){
+      if(u.guest) return false;
+      if((u.status||'') !== 'Enabled') return false;
+      if(dept && (u.dept||'') !== dept) return false;
+      return true;
+    });
+  }
+  // The mining itself. For one department: who is in it, what each entitlement's
+  // coverage is, and which of them are held by so few people that they are
+  // exceptions rather than anything to build a role out of.
+  function mineDept(dept){
+    var people = rbacPeople(dept), counts = {}, n = people.length;
+    people.forEach(function(u){ entsOf(u).forEach(function(e){ counts[e] = (counts[e]||0) + 1; }); });
+    var core = [], partial = [], outliers = [];
+    Object.keys(counts).sort().forEach(function(e){
+      var c = counts[e];
+      if(n && c === n) core.push(e);
+      else if(c > 1) partial.push(e);
+      else outliers.push(e);
+    });
+    return { dept:dept, people:people, n:n, counts:counts, core:core, partial:partial, outliers:outliers };
+  }
+  function whoHas(dept, ent){
+    return rbacPeople(dept).filter(function(u){ return entsOf(u).indexOf(ent)>=0; });
+  }
+  function rbacRole(name){ return rbacState().roles.filter(function(r){ return r.name===name; })[0] || null; }
+  // Two entitlements that a person is not supposed to hold at once. Checked when a
+  // role is defined, not afterwards, because afterwards means everyone already has it.
+  function sodHit(ents){
+    var pairs = (rbacCfg() && rbacCfg().sodPairs) || [], hits = [];
+    pairs.forEach(function(p){ if(ents.indexOf(p.a)>=0 && ents.indexOf(p.b)>=0) hits.push(p); });
+    return hits;
+  }
+  function rbacEffective(u){
+    // what the person would hold once the model is applied: their assigned roles'
+    // entitlements, plus any exception kept for them by name
+    var st = rbacState(), out = [];
+    (st.assigned[u.upn] || []).forEach(function(rn){
+      var r = rbacRole(rn); if(r) r.ents.forEach(function(e){ if(out.indexOf(e)<0) out.push(e); });
+    });
+    Object.keys(st.exceptions).forEach(function(k){
+      var p = k.split('|');
+      if(p[0]===u.upn && st.exceptions[k]==='keep' && out.indexOf(p[1])<0) out.push(p[1]);
+    });
+    return out.sort();
+  }
+
+  function covBar(n, d){
+    var p = d ? Math.round(n * 100 / d) : 0;
+    var tone = n === d ? 'ok' : n > 1 ? 'warn' : 'bad';
+    return '<div class="row" style="gap:10px;align-items:center">' +
+      '<div class="mtr-t" style="margin:0;flex:1;min-width:70px" role="img" aria-label="' + n + ' of ' + d + ' people">' +
+      '<i class="mtr-f ' + tone + '" style="width:' + Math.max(p, 3) + '%"></i></div>' +
+      '<span class="mono faint" style="font-size:12.5px;white-space:nowrap">' + n + '/' + d + '</span></div>';
+  }
+  function pRBAC(){
+    var cfg = rbacCfg();
+    if(!cfg) return '<h1 class="pg">Role model</h1><div class="card"><div class="card-b faint">No role-modelling work in this shift.</div></div>';
+    var st = rbacState();
+    if(!st.mined){
+      return '<h1 class="pg">Role model</h1>' +
+        card('Entitlement mining', '',
+          '<div class="card-b"><p>Nothing has been mined yet. The directory currently grants access one person at a time; there is no role model to compare against.</p>' +
+          '<p class="faint">Mining reads the access every enabled person actually holds — on-premises groups, cloud groups, application roles and directory roles — and groups it by department so that the access people share can be told apart from the access one person happens to have.</p>' +
+          '<div class="row" style="margin-top:14px"><button class="btn" data-rmine="1" type="button">Mine the entitlements</button></div></div>');
+    }
+    var scope = cfg.scope || [];
+    var mined = scope.map(mineDept);
+    var direct = 0, total = 0;
+    mined.forEach(function(m){ m.people.forEach(function(u){ total += entsOf(u).length; }); });
+    mined.forEach(function(m){ m.outliers.forEach(function(){ direct++; }); });
+
+    var summary = '<div class="stats">' +
+      statTile('People in scope', String(mined.reduce(function(a,m){ return a + m.n; }, 0)), 'across ' + scope.length + ' departments') +
+      statTile('Distinct entitlements', String(Object.keys(mined.reduce(function(a,m){ Object.keys(m.counts).forEach(function(e){ a[e]=1; }); return a; }, {})).length), 'groups, application and directory roles') +
+      statTile('Held by one person', String(direct), 'exceptions, not roles') +
+      statTile('Roles defined', String(st.roles.length), st.roles.length ? 'from mined evidence' : 'none yet') +
+      '</div>';
+
+    var deptCards = mined.map(function(m){
+      var rows = Object.keys(m.counts).sort(function(a,b){ return m.counts[b]-m.counts[a] || (a<b?-1:1); }).map(function(e){
+        var c = m.counts[e];
+        var band = c===m.n ? '<span class="pill en">Everyone</span>' : c>1 ? '<span class="pill warn">' + c + ' of ' + m.n + '</span>' : '<span class="pill dis">One person</span>';
+        var holders = whoHas(m.dept, e).map(function(u){ return pname(u.upn); }).join(', ');
+        return '<tr><td>' + esc(entLabel(e)) + (entSensitive(e) ? ' <span class="pill dis">sensitive</span>' : '') +
+          '<div class="faint" style="font-size:12.5px">' + esc(holders) + '</div></td>' +
+          '<td>' + esc(entKind(e)) + '</td>' +
+          '<td>' + covBar(c, m.n) + '</td>' +
+          '<td>' + band + '</td></tr>';
+      }).join('');
+      var defined = st.roles.filter(function(r){ return r.dept===m.dept; })[0];
+      return card(esc(m.dept) + ' · ' + m.n + ' people',
+        defined ? '<span class="pill en">' + esc(defined.name) + ' defined</span>'
+                : '<button class="btn sm" data-rdef="' + esc(m.dept) + '" type="button">Define a role</button>',
+        '<div class="card-b"><p class="faint">' + m.core.length + ' entitlement' + (m.core.length===1?'':'s') + ' held by everyone in this department, ' +
+        m.partial.length + ' held by some, ' + m.outliers.length + ' held by exactly one person.</p></div>' +
+        table(['Entitlement','Kind','Coverage',''], rows, 'Nobody in this department holds anything.'));
+    }).join('');
+
+    var roleRows = st.roles.map(function(r){
+      var holders = Object.keys(st.assigned).filter(function(u){ return (st.assigned[u]||[]).indexOf(r.name)>=0; });
+      var hits = sodHit(r.ents);
+      return '<tr' + (hits.length ? ' class="denyrow"' : '') + '><td><b>' + esc(r.name) + '</b><div class="faint" style="font-size:12.5px">' + esc(r.dept) + '</div></td>' +
+        '<td>' + r.ents.map(function(e){ return esc(entLabel(e)); }).join('<br>') + '</td>' +
+        '<td>' + (r.owner ? esc(pname(r.owner)) : '<span style="color:var(--bad);font-weight:600">Nobody</span>') + '</td>' +
+        '<td>' + (r.reviewEvery ? esc(r.reviewEvery) : '<span style="color:var(--bad);font-weight:600">Never</span>') + '</td>' +
+        '<td>' + holders.length + '</td>' +
+        '<td><div class="row" style="gap:6px"><button class="btn sec sm" data-rown="' + esc(r.name) + '" type="button">Owner and review</button>' +
+        '<button class="btn sec sm" data-rasg="' + esc(r.name) + '" type="button">Assign</button></div></td></tr>';
+    }).join('');
+
+    // migration: assigned but still carrying the direct grants the role replaced
+    var pend = [];
+    st.roles.forEach(function(r){
+      Object.keys(st.assigned).forEach(function(upn){
+        if((st.assigned[upn]||[]).indexOf(r.name)<0) return;
+        if(st.stripped[upn]) return;
+        var u = U(upn); if(!u) return;
+        var eff = rbacEffective(u), still = entsOf(u).filter(function(e){ return eff.indexOf(e)>=0; });
+        pend.push({ u:u, role:r, still:still });
+      });
+    });
+    var pendRows = pend.map(function(x){
+      return '<tr><td><b>' + esc(x.u.name) + '</b><div class="faint" style="font-size:12.5px">' + esc(x.u.title||'') + '</div></td>' +
+        '<td>' + esc(x.role.name) + '</td>' +
+        '<td>' + (x.still.length ? x.still.map(function(e){ return esc(entLabel(e)); }).join('<br>') : '<span class="faint">none</span>') + '</td>' +
+        '<td><button class="btn sec sm" data-rstrip="' + esc(x.u.upn) + '" type="button">Remove the direct grants</button></td></tr>';
+    }).join('');
+
+    var outRows = [];
+    mined.forEach(function(m){
+      m.outliers.forEach(function(e){
+        var who = whoHas(m.dept, e)[0]; if(!who) return;
+        var k = who.upn + '|' + e, dec = st.exceptions[k];
+        outRows.push('<tr><td><b>' + esc(who.name) + '</b><div class="faint" style="font-size:12.5px">' + esc(who.title||'') + ' · ' + esc(m.dept) + '</div></td>' +
+          '<td>' + esc(entLabel(e)) + (entSensitive(e) ? ' <span class="pill dis">sensitive</span>' : '') + '</td>' +
+          '<td>' + (dec === 'keep' ? '<span class="pill en">Kept as a documented exception</span>' : dec === 'remove' ? '<span class="pill dis">Removed</span>' : '<span class="pill warn">Undecided</span>') + '</td>' +
+          '<td>' + (dec ? '<span class="faint">' + esc(st.exceptions[k + '|why'] || '') + '</span>' :
+            '<div class="row" style="gap:6px"><button class="btn sec sm" data-rex="' + esc(k) + '|keep" type="button">Keep</button>' +
+            '<button class="btn sec sm" data-rex="' + esc(k) + '|remove" type="button">Remove</button></div>') + '</td></tr>');
+      });
+    });
+
+    return '<h1 class="pg">Role model</h1>' + summary +
+      '<div class="banner"><span>Mined from the access people hold, not from their job titles. Where the two disagree, this page follows the access.</span></div>' +
+      deptCards +
+      card('Roles defined', '', table(['Role','Entitlements','Owner','Review','Assigned',''], roleRows, 'No roles defined yet.')) +
+      card('Migration', '<span class="faint">Assign first, then remove what it replaced.</span>',
+        table(['Person','Role','Direct grants the role now covers',''], pendRows, 'Nobody is mid-migration.')) +
+      card('Exceptions', '<span class="faint">Access held by exactly one person in a department.</span>',
+        table(['Person','Entitlement','Decision',''], outRows.join(''), 'No exceptions found.'));
+  }
+
+  function rbacMine(){
+    act('Mine entitlements', 'Role model', function(){ rbacState().mined = true; },
+      'Entitlements mined across the departments in scope',
+      { cat:'Governance', detail:'Entitlement mining run across ' + ((rbacCfg().scope||[]).join(', ')), mins:25 });
+  }
+
+  function rbacDefine(dept){
+    var m = mineDept(dept), st = rbacState();
+    var all = m.core.concat(m.partial).concat(m.outliers);
+    var body = '<p>Everything held by anybody in ' + esc(dept) + '. What everyone already has is ticked; the rest is a decision.</p>' +
+      '<label class="fl">Role name</label><input class="inp" id="rd-n" value="' + esc(dept + ' — standard') + '">' +
+      '<div style="margin-top:12px">' + all.map(function(e){
+        var c = m.counts[e], everyone = c === m.n;
+        return '<label class="radio' + (everyone ? ' on' : '') + '" style="display:flex;gap:10px;align-items:flex-start;margin-bottom:6px">' +
+          '<input type="checkbox" data-re="' + esc(e) + '"' + (everyone ? ' checked' : '') + '>' +
+          (c === 1 ? '<span class="pill dis" style="margin-right:6px">one person</span>' : '') +
+          '<span><b>' + esc(entLabel(e)) + '</b> <span class="faint">· ' + esc(entKind(e)) + '</span>' +
+          '<div class="faint" style="font-size:12.5px">' + c + ' of ' + m.n + ' people · ' + esc(whoHas(dept, e).map(function(u){ return pname(u.upn); }).join(', ')) + '</div></span></label>';
+      }).join('') + '</div>' +
+      '<div id="rd-warn"></div>';
+    openModal('Define a role from ' + dept, body, 'Define the role', function(){
+      var name = (document.getElementById('rd-n').value || '').trim();
+      if(!name){ return false; }
+      var sel = [];
+      modalEl.querySelectorAll('[data-re]').forEach(function(c){ if(c.checked) sel.push(c.dataset.re); });
+      if(!sel.length) return false;
+      var hits = sodHit(sel);
+      act('Define role', name, function(){
+        st.roles.push({ name:name, dept:dept, ents:sel.sort(), owner:'', reviewEvery:'' });
+        if(hits.length) hits.forEach(function(h){ st.flagged.push(h.a + '|' + h.b); });
+      }, hits.length ? 'Role defined — and it carries a segregation-of-duties conflict' : 'Role defined from mined entitlements',
+        { cat:'Governance', detail:name + ' · ' + sel.length + ' entitlements · ' + dept, mins:20 });
+    }, function(){
+      var sync = function(){
+        var sel = [];
+        modalEl.querySelectorAll('[data-re]').forEach(function(c){
+          c.closest('.radio').classList.toggle('on', c.checked);
+          if(c.checked) sel.push(c.dataset.re);
+        });
+        var hits = sodHit(sel);
+        var over = sel.filter(function(e){ return entSensitive(e) && m.counts[e] < m.n; });
+        var w = '';
+        hits.forEach(function(h){ w += '<div class="banner bad"><span><b>Segregation of duties.</b> ' + esc(h.why) + '</span></div>'; });
+        over.forEach(function(e){ w += '<div class="banner warn"><span>' + esc(entLabel(e)) + ' is held by ' + m.counts[e] + ' of ' + m.n + ' people. Putting it in the role gives it to all ' + m.n + '.</span></div>'; });
+        document.getElementById('rd-warn').innerHTML = w;
+      };
+      modalEl.querySelectorAll('[data-re]').forEach(function(c){ c.onchange = sync; });
+      sync();
+    });
+  }
+
+  function rbacAssign(name){
+    var r = rbacRole(name); if(!r) return;
+    var st = rbacState();
+    var cands = rbacPeople(r.dept);
+    var body = '<p>Assigning the role does not remove anything. What it replaces is removed separately, once the role is in place and verified.</p>' +
+      '<div>' + cands.map(function(u){
+        var has = (st.assigned[u.upn]||[]).indexOf(name)>=0;
+        var eff = r.ents, mineNow = entsOf(u);
+        var gains = eff.filter(function(e){ return mineNow.indexOf(e)<0; });
+        return '<label class="radio' + (has ? ' on' : '') + '" style="display:flex;gap:10px;align-items:flex-start;margin-bottom:6px">' +
+          '<input type="checkbox" data-ra="' + esc(u.upn) + '"' + (has ? ' checked' : '') + '>' +
+          '<span><b>' + esc(u.name) + '</b> <span class="faint">· ' + esc(u.title||'') + '</span>' +
+          (gains.length ? '<div style="font-size:12.5px;color:var(--warn)">Gains: ' + esc(gains.map(entLabel).join(', ')) + '</div>'
+                        : '<div class="faint" style="font-size:12.5px">Already holds everything in the role</div>') + '</span></label>';
+      }).join('') + '</div>';
+    openModal('Assign ' + name, body, 'Assign', function(){
+      var sel = [];
+      modalEl.querySelectorAll('[data-ra]').forEach(function(c){ if(c.checked) sel.push(c.dataset.ra); });
+      act('Assign role', name, function(){
+        cands.forEach(function(u){
+          var cur = st.assigned[u.upn] || [];
+          var want = sel.indexOf(u.upn)>=0;
+          if(want && cur.indexOf(name)<0) cur.push(name);
+          if(!want) cur = cur.filter(function(x){ return x!==name; });
+          st.assigned[u.upn] = cur;
+        });
+      }, sel.length + ' assigned to ' + name,
+        { cat:'Governance', detail:name + ' assigned to ' + sel.map(function(x){ return pname(x); }).join(', '), mins:10 });
+    }, function(){
+      modalEl.querySelectorAll('[data-ra]').forEach(function(c){ c.onchange = function(){ c.closest('.radio').classList.toggle('on', c.checked); }; });
+    });
+  }
+
+  function rbacStrip(upn){
+    var u = U(upn); if(!u) return;
+    var st = rbacState();
+    var assigned = st.assigned[upn] || [];
+    if(!assigned.length){
+      openModal('Remove the direct grants', '<div class="banner bad"><span>' + esc(u.name) + ' has not been assigned a role yet. Removing the direct grants now takes the access away and puts nothing back.</span></div>', null, null);
+      return;
+    }
+    var eff = rbacEffective(u), now = entsOf(u);
+    var going = now.filter(function(e){ return eff.indexOf(e)>=0; });
+    var orphan = now.filter(function(e){ return eff.indexOf(e)<0; });
+    var body = '<p>The role now grants these, so the individual grants are redundant:</p><ul class="bul">' +
+      (going.length ? going.map(function(e){ return '<li>' + esc(entLabel(e)) + '</li>'; }).join('') : '<li class="faint">nothing</li>') + '</ul>' +
+      (orphan.length ? '<div class="banner warn"><span>These are <b>not</b> covered by the role and will be left in place: ' + esc(orphan.map(entLabel).join(', ')) + '. If they should go, decide that as an exception, not as part of the migration.</span></div>' : '');
+    openModal('Remove the direct grants for ' + u.name, body, 'Remove them', function(){
+      act('Remove direct grants', u.name, function(){
+        st.stripped[upn] = true;
+        if(u.ad && u.ad.groups) u.ad.groups = u.ad.groups.filter(function(g){ return going.indexOf(typeof g==='string'?g:g&&g.g)<0; });
+        u.groups = (u.groups||[]).filter(function(g){ return going.indexOf(typeof g==='string'?g:g&&g.g)<0; });
+        u.apps = (u.apps||[]).filter(function(a){ return going.indexOf('APP:' + a.app + ':' + a.role) < 0; });
+      }, 'Direct grants removed — ' + u.name + ' now holds it through the role',
+        { cat:'Governance', detail:u.name + ' · ' + going.length + ' direct grants removed, now granted by role', mins:8 });
+    });
+  }
+
+  function rbacOwner(name){
+    var r = rbacRole(name); if(!r) return;
+    var opts = allUsers().filter(function(u){ return !u.guest && (u.status||'')==='Enabled'; })
+      .map(function(u){ return '<option value="' + esc(u.upn) + '"' + (r.owner===u.upn ? ' selected' : '') + '>' + esc(u.name) + ' — ' + esc(u.title||'') + '</option>'; }).join('');
+    var cyc = ['','Quarterly','Every six months','Annually'].map(function(c){
+      return '<option value="' + esc(c) + '"' + (r.reviewEvery===c ? ' selected' : '') + '>' + esc(c || '— no review —') + '</option>'; }).join('');
+    openModal('Owner and review for ' + name,
+      '<p>A role with no owner is a group with a better name. Somebody has to be answerable for what it grants, and it has to come back around.</p>' +
+      '<label class="fl">Owner</label><select class="inp" id="ro-w"><option value="">— nobody —</option>' + opts + '</select>' +
+      '<label class="fl" style="margin-top:10px">Recertified</label><select class="inp" id="ro-c">' + cyc + '</select>',
+      'Save', function(){
+        var w = document.getElementById('ro-w').value, c = document.getElementById('ro-c').value;
+        act('Set role owner and review', name, function(){ r.owner = w; r.reviewEvery = c; },
+          'Owner and review cycle set for ' + name,
+          { cat:'Governance', detail:name + ' · owner: ' + (w ? pname(w) : 'none') + ' · review: ' + (c || 'none'), mins:6 });
+      });
+  }
+
+  function rbacException(key){
+    var p = key.split('|'), upn = p[0], ent = p[1], dec = p[2];
+    var u = U(upn); if(!u) return;
+    var st = rbacState();
+    var body = dec === 'keep'
+      ? '<p>Kept as a documented exception. ' + esc(u.name) + ' keeps ' + esc(entLabel(ent)) + ', it stays outside the role, and it is recorded as a decision rather than as something nobody noticed.</p>' +
+        '<label class="fl">Why this one is legitimate</label><textarea class="inp" id="rx-w" rows="3" placeholder="What this person does that the rest of the department does not."></textarea>'
+      : '<p>' + esc(u.name) + ' loses ' + esc(entLabel(ent)) + '.</p>' +
+        (entSensitive(ent) ? '<div class="banner warn"><span>This is sensitive access. If it turns out to be needed, removing it stops work until somebody grants it back.</span></div>' : '') +
+        '<label class="fl">Why it is going</label><textarea class="inp" id="rx-w" rows="3" placeholder="Why this is privilege creep rather than a requirement."></textarea>';
+    openModal(dec === 'keep' ? 'Keep as an exception' : 'Remove this access', body, dec === 'keep' ? 'Record the exception' : 'Remove it', function(){
+      var why = (document.getElementById('rx-w').value || '').trim();
+      if(!why) return false;
+      act(dec === 'keep' ? 'Record access exception' : 'Remove access', u.name, function(){
+        st.exceptions[upn + '|' + ent] = dec;
+        st.exceptions[upn + '|' + ent + '|why'] = why;
+        if(dec === 'remove'){
+          if(u.ad && u.ad.groups) u.ad.groups = u.ad.groups.filter(function(g){ return (typeof g==='string'?g:g&&g.g)!==ent; });
+          u.groups = (u.groups||[]).filter(function(g){ return (typeof g==='string'?g:g&&g.g)!==ent; });
+          u.apps = (u.apps||[]).filter(function(a){ return ('APP:' + a.app + ':' + a.role) !== ent; });
+        }
+      }, dec === 'keep' ? 'Exception recorded for ' + u.name : entLabel(ent) + ' removed from ' + u.name,
+        { cat:'Governance', detail:u.name + ' · ' + entLabel(ent) + ' · ' + (dec==='keep' ? 'kept as exception' : 'removed') + ' · ' + why, mins:6 });
+    });
+  }
+
   function pVault(){
     var v = vault();
     if(!v) return '<h1 class="pg">Credential vault</h1><div class="card"><div class="card-b faint">No vault in this shift.</div></div>';
@@ -3337,6 +3683,38 @@
 
   // ---------- grading ----------
   function test(c){
+    if(c.mined) return !!(S.rbac && S.rbac.mined);
+    if(c.role || c.roleFor){
+      var rr = (S.rbac && S.rbac.roles || []).filter(function(x){ return c.roleFor ? x.dept===c.roleFor : x.name===c.role; })[0];
+      if(c.defined) return !!rr;
+      if(!rr) return false;
+      if(c.hasEnt) return rr.ents.indexOf(c.hasEnt) >= 0;
+      if(c.lacksEnt) return rr.ents.indexOf(c.lacksEnt) < 0;
+      if(c.owner) return rr.owner === c.owner;
+      if(c.anyOwner) return !!rr.owner;
+      if(c.reviewed) return !!rr.reviewEvery;
+      return false;
+    }
+    if(c.roleCount) return (S.rbac && S.rbac.roles || []).length === c.roleCount;
+    if(c.assigned) return ((S.rbac && S.rbac.assigned || {})[c.u] || []).indexOf(c.assigned) >= 0;
+    if(c.assignedFor){
+      var held = (S.rbac && S.rbac.assigned || {})[c.u] || [];
+      return held.some(function(n){
+        var r = (S.rbac.roles||[]).filter(function(x){ return x.name===n; })[0];
+        return !!r && r.dept === c.assignedFor;
+      });
+    }
+    if(c.stripped) return !!(S.rbac && S.rbac.stripped && S.rbac.stripped[c.stripped]);
+    if(c.notStripped) return !(S.rbac && S.rbac.stripped && S.rbac.stripped[c.notStripped]);
+    if(c.exception){
+      var st = (S.rbac && S.rbac.exceptions) || {};
+      return st[c.exception + '|' + c.ent] === (c.as || 'keep');
+    }
+    if(c.sodFlagged) return ((S.rbac && S.rbac.flagged) || []).indexOf(c.sodFlagged) >= 0;
+    if(c.noSod){
+      var rs = (S.rbac && S.rbac.roles) || [];
+      return !rs.some(function(x){ return sodHit(x.ents).length > 0; });
+    }
     // true when anybody in the directory carries this name — used negated, to
     // grade an identity that should never have been created at all
     if(c.userExists){ var needle = c.userExists.toLowerCase();
@@ -3819,9 +4197,9 @@
       var rv = document.getElementById('review'); if(rv) rv.onclick = function(){ S.screen='console'; S.page='audit'; S.acat='mine'; S.done = true; save(); render(); };
       return;
     }
-    var navItems = [['home','Home'],['tickets','Tickets'],['sep','Sources'],['hr','HR feed'],['sep','Cloud directory'],['users','Users'],['groups','Groups'],['roles','Admin roles'],['apps','Applications'],['licenses','Licenses'],['ca','Conditional access'],['authm','Authentication methods'],['sep','Governance'],['vault','Credential vault'],['ext','External identities'],['pkg','Access packages'],['review','Access reviews'],['findings','Audit findings'],['svc','Service accounts'],['appregs','App registrations'],['risk','Identity protection'],['consents','App consents'],['bg','Emergency access'],['sep','On-premises'],['ad','Active Directory'],['gpo','Group Policy'],['shares','File shares'],['sync','Directory sync'],['sep','Tools'],['ps','PowerShell'],['sep','Monitoring'],['report','Reporting'],['signins','Sign-in logs'],['audit','Audit log'],['sep','Reference'],['policy','Access policy'],['runbooks','Runbooks'],['sep','You'],['myroles','My roles'],['scenarios','Scenarios']];
+    var navItems = [['home','Home'],['tickets','Tickets'],['sep','Sources'],['hr','HR feed'],['sep','Cloud directory'],['users','Users'],['groups','Groups'],['roles','Admin roles'],['apps','Applications'],['licenses','Licenses'],['ca','Conditional access'],['authm','Authentication methods'],['sep','Governance'],['vault','Credential vault'],['rbac','Role model'],['ext','External identities'],['pkg','Access packages'],['review','Access reviews'],['findings','Audit findings'],['svc','Service accounts'],['appregs','App registrations'],['risk','Identity protection'],['consents','App consents'],['bg','Emergency access'],['sep','On-premises'],['ad','Active Directory'],['gpo','Group Policy'],['shares','File shares'],['sync','Directory sync'],['sep','Tools'],['ps','PowerShell'],['sep','Monitoring'],['report','Reporting'],['signins','Sign-in logs'],['audit','Audit log'],['sep','Reference'],['policy','Access policy'],['runbooks','Runbooks'],['sep','You'],['myroles','My roles'],['scenarios','Scenarios']];
     var cur = {ticket:'tickets', user:'users', group:'groups', role:'roles', app:'apps'}[S.page] || S.page;
-    navItems = navItems.filter(function(n){ return !(n[0]==='vault' && !D.vault) && !(n[0]==='authm' && !D.authMethods) && !(n[0]==='ext' && !D.external) && !(n[0]==='pkg' && !D.packages) && !(n[0]==='hr' && !D.hrFeed) && !(n[0]==='review' && !D.review) && !(n[0]==='findings' && !D.findings) && !(n[0]==='svc' && !svcList().length) && !(n[0]==='appregs' && !S.appRegs.length) && !(n[0]==='risk' && !S.risk.length) && !(n[0]==='consents' && !S.consents.length) && !(n[0]==='bg' && !(S.bg||[]).length) && !(n[0]==='scenarios' && Object.keys(SCN).length<2); });
+    navItems = navItems.filter(function(n){ return !(n[0]==='rbac' && !D.roleModel) && !(n[0]==='vault' && !D.vault) && !(n[0]==='authm' && !D.authMethods) && !(n[0]==='ext' && !D.external) && !(n[0]==='pkg' && !D.packages) && !(n[0]==='hr' && !D.hrFeed) && !(n[0]==='review' && !D.review) && !(n[0]==='findings' && !D.findings) && !(n[0]==='svc' && !svcList().length) && !(n[0]==='appregs' && !S.appRegs.length) && !(n[0]==='risk' && !S.risk.length) && !(n[0]==='consents' && !S.consents.length) && !(n[0]==='bg' && !(S.bg||[]).length) && !(n[0]==='scenarios' && Object.keys(SCN).length<2); });
     navItems = navItems.filter(function(n, ix){ if(n[0]!=='sep') return true; for(var k=ix+1;k<navItems.length;k++){ if(navItems[k][0]!=='sep') return true; } return false; });
     navItems = navItems.filter(function(n, ix){ return !(n[0]==='sep' && navItems[ix+1] && navItems[ix+1][0]==='sep'); });
     root.innerHTML = '<div class="shell"><nav class="nav" aria-label="Console">' + navItems.map(function(n){
@@ -3905,6 +4283,12 @@
     on('[data-svcrot]', function(b){ svcRotate(b.dataset.svcrot); });
     on('[data-reportobj]', function(b){ reportObj(b.dataset.reportobj); });
     on('[data-job]', function(b){ var p = split(b.dataset.job); jobAction(p[0], +p[1], p[2]); });
+    on('[data-rmine]', function(){ rbacMine(); });
+    on('[data-rdef]', function(b){ rbacDefine(b.dataset.rdef); });
+    on('[data-rasg]', function(b){ rbacAssign(b.dataset.rasg); });
+    on('[data-rown]', function(b){ rbacOwner(b.dataset.rown); });
+    on('[data-rstrip]', function(b){ rbacStrip(b.dataset.rstrip); });
+    on('[data-rex]', function(b){ rbacException(b.dataset.rex); });
     on('[data-vout]', function(b){ vaultCheckout(b.dataset.vout); });
     on('[data-vin]', function(b){ var a = vAcc(b.dataset.vin); vaultCheckin(b.dataset.vin, vOverdue(a) || a.checkedOutBy !== ME); });
     on('[data-vrot]', function(b){ vaultRotate(b.dataset.vrot); });
