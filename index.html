@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Least Privilege — IAM Console</title>
+<meta name="description" content="A hybrid identity and access management simulator: Active Directory, a cloud console, and a shift of real tickets.">
+<meta name="theme-color" content="#12171B">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Least Privilege">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="bar">
+  <div id="hudslot"></div>
+  <div id="barkeep" hidden></div>
+  <div class="search" id="gsearchwrap"><input id="gsearch" type="search" placeholder="Search users, groups, tickets  ( / )" aria-label="Search" autocomplete="off"><div class="sres" id="sres" hidden></div></div>
+  <span class="offline" id="offline" hidden>Offline</span>
+  <button class="pimchip" id="pimchip" type="button" hidden></button>
+  <button class="bellbtn" id="bell" type="button" aria-label="Notifications" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="n" id="belln" hidden>0</span></button>
+  <button class="barbtn go" id="endshift" type="button" disabled>End shift</button>
+  <button class="barbtn" id="reset" type="button">Reset</button>
+  <button class="barbtn" id="installbtn" type="button" hidden>Install app</button>
+  <button class="me" id="mebtn" type="button" aria-label="Account"><b>IA</b><span>IAM Analyst</span></button>
+</header>
+<div class="prog" id="prog"></div>
+<div class="panel" id="panel" hidden></div>
+<div id="root"></div>
+<div id="modal"></div>
+<div id="toast"></div>
+<script src="data.js"></script>
+<script src="data2.js"></script>
+<script src="data3.js"></script>
+<script src="data4.js"></script>
+<script src="data5.js"></script>
+<script src="data6.js"></script>
+<script src="data7.js"></script>
+<script src="data8.js"></script>
+<script src="data9.js"></script>
+<script src="engine.js"></script>
+</body>
+</html>

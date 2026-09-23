@@ -1,0 +1,33 @@
+{
+ "name": "Least Privilege \u2014 IAM Console",
+ "short_name": "Least Privilege",
+ "description": "A hybrid identity and access management simulator: on-premises Active Directory, a cloud console, and a shift of real tickets.",
+ "start_url": "./index.html",
+ "scope": "./",
+ "display": "standalone",
+ "orientation": "any",
+ "background_color": "#EEF0EC",
+ "theme_color": "#12171B",
+ "categories": [
+  "education",
+  "productivity"
+ ],
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-maskable.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
+  }
+ ]
+}
