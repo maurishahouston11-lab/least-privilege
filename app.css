@@ -1,4 +1,5 @@
 :root{
+    color-scheme:light;
     --ground:#F2F4F8; --surface:#FFFFFF; --surface-2:#F7F9FC; --ink:#0D1421; --ink-soft:#59647A; --ink-faint:#8A94A8; --rule:#E3E8EF;
     --bar:#131B2E; --bar-ink:#E8ECF6; --bar-soft:#8E9AB4; --nav:#FFFFFF;
     --accent:#3B49DF; --accent-soft:#EAECFF; --accent-line:#C3C9FA;
@@ -10,14 +11,10 @@
     --sh-1:0 1px 2px rgba(13,20,33,.06);
     --sh-2:0 1px 2px rgba(13,20,33,.06), 0 12px 28px -18px rgba(13,20,33,.30);
   }
-  @media (prefers-color-scheme:dark){
-    :root:not([data-theme="light"]){
-      --ground:#0E1320; --surface:#161D2E; --surface-2:#1B2436; --ink:#E8ECF6; --ink-soft:#9AA5BE; --ink-faint:#6F7B95; --rule:#26304A;
-      --bar:#0B0F1A; --bar-ink:#E8ECF6; --bar-soft:#8E9AB4; --nav:#131B2E;
-      --accent:#8D97FF; --accent-soft:#1D2547; --accent-line:#323C6B;
-      --ok:#3FBF86; --ok-soft:#12301F; --warn:#F2A93B; --warn-soft:#2E2412; --bad:#F07A6D; --bad-soft:#331A18;
-    }
-  }
+  /* The light palette is the design. The console does NOT follow the OS theme:
+     a machine in dark mode was rendering the dark variant, which reads as the
+     old admin-panel look and buries the whole redesign. Dark stays available
+     as an explicit opt-in via data-theme="dark". */
   :root[data-theme="dark"]{
     --ground:#0E1320; --surface:#161D2E; --surface-2:#1B2436; --ink:#E8ECF6; --ink-soft:#9AA5BE; --ink-faint:#6F7B95; --rule:#26304A;
     --bar:#0B0F1A; --bar-ink:#E8ECF6; --bar-soft:#8E9AB4; --nav:#131B2E;
