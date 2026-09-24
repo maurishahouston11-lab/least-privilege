@@ -20,6 +20,9 @@ the shift ends you find out what every decision cost three months later.
 
 Ten minutes, in this order:
 
+0. **Take the walkthrough.** It runs automatically the first time you sign in —
+   six steps, thirty seconds, and it points at the real console rather than
+   describing it. It's in the sidebar afterwards if you skip it.
 1. **Shift 1 — First Week.** Six tickets, the ordinary day. It teaches the
    console and the scoring.
 2. End the shift without finishing everything. **Read the scorecard**: each
@@ -79,6 +82,19 @@ Reporting is computed live from the same objects every other page edits, so a
 number moves the moment you fix the thing behind it.
 
 ![Reporting](docs/07-reporting.png)
+
+Every ticket carries the concept behind it — what the work is really called, why
+it matters, what goes wrong without it, and the vocabulary an interviewer uses.
+Twenty concepts cover all sixteen shifts.
+
+![The concept behind a ticket](docs/12-concept.png)
+
+There's a walkthrough for anyone opening the console cold, and hints on every
+ticket that escalate from a question, to where to look, to the steps themselves.
+The hints are computed from the grader's own checks, so they can't drift out of
+step with the scoring, and using one is recorded rather than penalised.
+
+![The walkthrough](docs/11-walkthrough.png)
 
 Switching an application off is the one operation whose failure has no symptom.
 The work is a dependency list and the order you follow it in.
@@ -153,6 +169,9 @@ what it cost — three months later, in the specific.
   the retention obligation that outlives the contract
 - **Governance** — access reviews and certification, segregation of duties,
   litigation hold, audit evidence
+- **Learning the vocabulary** — twenty concept cards covering the whole
+  curriculum: what each idea is, why it matters, the failure it prevents, and
+  the terms an interviewer will use for it
 - **Reporting** — coverage against a target, dormant and orphaned accounts,
   standing versus activated privilege, registered methods by strength, guests
   without a sponsor, packages without an end date

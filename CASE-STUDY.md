@@ -92,6 +92,7 @@ mechanic added one:
 | 14 | A credential vault: safes, policy, check-out, rotation on return |
 | 15 | Entitlement mining, role definition, segregation-of-duties evaluation |
 | 16 | Application dependency graph, order-sensitive teardown, sole-access detection |
+| — | A walkthrough, a concept library, and hints derived from the grader |
 
 Two late pieces were rewrites rather than additions.
 
@@ -166,6 +167,32 @@ The build now emits a manifest — date, headline, blurb and check counts per
 shift, 7KB — and the roster renders entirely from that. The shift you click
 fetches its own data file; the rest are prefetched quietly once the browser is
 idle, so offline still works. First paint went from 1.45MB to 512KB.
+
+## Teaching without a separate tutorial mode
+
+Three additions, none of which touch the grader.
+
+A **walkthrough** runs on a first-ever sign-in: six steps that put a ring around
+real console furniture rather than describing it in prose. It exists because
+somebody opening the live site cold lands in a console with twenty-four
+navigation pages and no idea what they are allowed to touch, and a recruiter with
+four minutes will simply leave.
+
+A **concept library** of twenty cards covers the whole curriculum — what the idea
+is, why it matters, what goes wrong without it, and the terms an interviewer will
+use. Tickets map to concepts by shift, with per-ticket overrides where a ticket is
+really about something other than its shift's theme, so the mapping is a dozen
+lines of data rather than a hundred hand edits.
+
+**Hints** were the interesting one. Writing three escalating hints for a hundred
+tickets is three hundred pieces of prose that would rot the first time a check
+changed. Instead they are computed from the ticket's own checks: level one counts
+what is still unmet, level two names the areas those checks live in — derived
+from the *shape of each check's condition*, so a check on `c.ca` points at
+conditional access and one on `c.decom` at the retiring application — and level
+three lists the outstanding steps. A hint cannot drift out of step with the
+grading because it is generated from it. Using one is recorded on the scorecard
+and changes no score, which seemed the honest arrangement.
 
 ## Switching an application off
 

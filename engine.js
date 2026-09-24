@@ -2743,6 +2743,7 @@
         '<dl class="kv"><dt>Resolution</dt><dd>' + esc(dl ? dl[1] : st.disp) + '</dd><dt>Note</dt><dd>' + esc(st.note) + '</dd></dl>' +
         '<p class="hint">Outcomes aren’t shown until you end your shift.</p><button class="btn sec sm" id="r-reopen" type="button" style="margin-top:8px">Reopen</button></div></div>';
     }
+    var learn = conceptCard(t) + hintCard(t);
     var rbSteps = D.runbooks[t.type] || [];
     var rb = rbSteps.length ? '<div class="card" style="margin-top:14px"><div class="card-h"><h3>Runbook · ' + esc(t.type) + '</h3></div><div class="card-b rb"><p class="hint" style="margin:0 0 6px">Your own checklist. Ticking a box doesn’t change anything.</p>' + rbSteps.map(function(s, i){ return '<label class="check"><input type="checkbox" data-rb="' + i + '"' + (st.rb[i]?' checked':'') + '> <span>' + esc(s) + '</span></label>'; }).join('') + '</div></div>' : '';
     var meta = '<div class="card meta"><dl class="kv sm">' +
@@ -2758,7 +2759,7 @@
         '<div class="msg"><div class="msg-h"><span>' + esc(who(t.requester)) + '</span><span>Request · ' + esc(created) + '</span></div><div class="msg-b"><p>' + esc(t.body) + '</p></div></div>' + thread +
         st.tl.map(tlItem).join('') + composer +
         '<div class="card"><div class="card-h"><h3>Related records</h3></div><div class="card-b"><div class="links" style="margin:0">' + links + sigLink + '<button class="link" data-nav="policy" type="button">Access policy →</button></div></div></div>' +
-      '</div><div>' + meta + res + rb + '</div></div>';
+      '</div><div>' + meta + res + rb + learn + '</div></div>';
   }
   function pUsers(){
     var q = (S.q||'').toLowerCase();
@@ -2928,6 +2929,195 @@
       card('Group assignments', '', table(['Group','Role','Members'], grp, 'None.')) + card('Direct user assignments', '<span class="faint" style="font-size:12.5px">Not removed by group changes</span>', table(['User','Role','Assigned',''], rows.join(''), 'No direct assignments.'));
   }
 
+
+
+  // ---------- training ----------
+  // Three things, none of which change what the grader does. A walkthrough for
+  // somebody who has never seen the console; a concept library that explains the
+  // idea behind the work in the language an interview uses; and hints computed
+  // from the checks themselves, so a hint can never drift out of step with the
+  // thing it is hinting at.
+
+  var TOUR = [
+    { page:'tickets', sel:'.nav',
+      title:'This is a console, not a quiz',
+      body:'On the left is everything a real hybrid identity estate has: a cloud directory, an on-premises Active Directory, conditional access, a credential vault, reporting. You can open any of it at any time. Nothing here is a menu of right answers.' },
+    { page:'tickets', sel:'#tk-list, .tk-list, main',
+      title:'The queue is the work',
+      body:'Each shift is a day of real tickets. People ask for things, some of which they should not get, and one of them is usually not who they say they are. Tickets arrive while you work, so the queue at 08:00 is not the queue at noon.' },
+    { page:'tickets', sel:'[data-ticket]',
+      title:'Open one and read it properly',
+      body:'A ticket is a person asking for something in their own words. The information you need is spread across the request, the person’s record, the policy and the directory itself — which is the actual skill being tested.' },
+    { page:'users', sel:'tr.click, tbody',
+      title:'Every identity has two halves',
+      body:'Open anybody. Their cloud account and their Active Directory object are shown side by side, and they disagree with each other more often than you would like. That disagreement is the whole problem with hybrid identity, and several shifts turn on it.' },
+    { page:'policy', sel:'main, .card',
+      title:'There is a written policy',
+      body:'It is not decoration. Tickets cite sections of it, the grader expects you to have followed it, and one or two requests are reasonable-sounding things the policy forbids.' },
+    { page:'tickets', sel:'#endshift',
+      title:'Ending the shift is the point',
+      body:'When you end a shift, every step you took — and every one you skipped — comes back as what it cost, three months later, to a named person. That scorecard is the reason this exists. You are meant to end a shift having missed things.' }
+  ];
+
+  function tourDone(){ try{ return localStorage.getItem('lp.console.tour') === 'done'; }catch(e){ return false; } }
+  function tourFinish(){ try{ localStorage.setItem('lp.console.tour','done'); }catch(e){} S.tour = null; save(); render(); }
+  function tourStart(){ S.tour = 0; save(); render(); }
+  function tourGo(n){
+    if(n < 0 || n >= TOUR.length) return tourFinish();
+    S.tour = n;
+    var step = TOUR[n];
+    if(step.page && S.page !== step.page){ S.page = step.page; S.arg = null; }
+    save(); render();
+  }
+  // Drawn after the page paints, so the ring lands on whatever is actually there.
+  function tourPaint(){
+    document.querySelectorAll('.tour-ring').forEach(function(x){ x.remove(); });
+    var old = document.getElementById('tourpanel'); if(old) old.remove();
+    if(S.tour == null || S.screen !== 'console') return;
+    var n = S.tour, step = TOUR[n];
+    if(!step) return;
+    var el = null;
+    (step.sel || '').split(',').some(function(s){ el = document.querySelector(s.trim()); return !!el; });
+    if(el){
+      if(el.getBoundingClientRect().top > window.innerHeight - 120) el.scrollIntoView({block:'center'});
+      var r = el.getBoundingClientRect();
+      var ring = document.createElement('div');
+      ring.className = 'tour-ring';
+      ring.style.cssText = 'position:absolute;left:' + (r.left + window.scrollX - 6) + 'px;top:' + (r.top + window.scrollY - 6) +
+        'px;width:' + (r.width + 12) + 'px;height:' + (r.height + 12) + 'px;';
+      document.body.appendChild(ring);
+    }
+    var p = document.createElement('div');
+    p.className = 'tour-panel'; p.id = 'tourpanel';
+    p.setAttribute('role','dialog'); p.setAttribute('aria-label','Walkthrough');
+    p.innerHTML = '<div class="tour-n">Step ' + (n+1) + ' of ' + TOUR.length + '</div>' +
+      '<h3>' + esc(step.title) + '</h3><p>' + esc(step.body) + '</p>' +
+      '<div class="tour-f">' +
+        '<button class="btn sec sm" id="tour-skip" type="button">Skip</button>' +
+        '<div class="row" style="gap:6px">' +
+          (n > 0 ? '<button class="btn sec sm" id="tour-back" type="button">Back</button>' : '') +
+          '<button class="btn sm" id="tour-next" type="button">' + (n === TOUR.length-1 ? 'Start the shift' : 'Next') + '</button>' +
+        '</div></div>';
+    document.body.appendChild(p);
+    document.getElementById('tour-skip').onclick = tourFinish;
+    document.getElementById('tour-next').onclick = function(){ tourGo(n+1); };
+    var b = document.getElementById('tour-back'); if(b) b.onclick = function(){ tourGo(n-1); };
+    p.querySelector('h3').focus && p.querySelector('h3').focus();
+  }
+
+  // ---- concepts -------------------------------------------------------
+  function concepts(){
+    if(window.LP_CONCEPTS) return window.LP_CONCEPTS;
+    var el = document.getElementById('lp-concepts');
+    if(el){ try{ window.LP_CONCEPTS = JSON.parse(el.textContent); return window.LP_CONCEPTS; }catch(e){} }
+    return [];
+  }
+  function conceptBy(id){ return concepts().filter(function(c){ return c.id === id; })[0] || null; }
+  function ticketConcepts(t){
+    var ids = (t.concepts && t.concepts.length) ? t.concepts : (D.concepts || []);
+    return ids.map(conceptBy).filter(Boolean);
+  }
+  function conceptCard(t){
+    var cs = ticketConcepts(t);
+    if(!cs.length) return '';
+    return '<div class="card" style="margin-top:14px"><div class="card-h"><h3>The concept behind this</h3></div><div class="card-b">' +
+      '<p class="hint" style="margin:0 0 10px">What this ticket is really about, and what it is called when somebody asks you about it in an interview.</p>' +
+      cs.map(function(c){
+        return '<button class="conc" data-concept="' + esc(c.id) + '" type="button"><b>' + esc(c.name) + '</b>' +
+          '<span class="faint">' + esc(c.short || '') + '</span></button>';
+      }).join('') + '</div></div>';
+  }
+  function conceptOpen(id){
+    var c = conceptBy(id); if(!c) return;
+    openModal(c.name,
+      '<p>' + esc(c.what) + '</p>' +
+      '<h4 class="ch">Why it matters</h4><p>' + esc(c.why) + '</p>' +
+      '<h4 class="ch">What goes wrong without it</h4><p>' + esc(c.fail) + '</p>' +
+      (c.terms && c.terms.length ? '<h4 class="ch">The words an interviewer will use</h4><div class="chips" style="margin-top:6px">' +
+        c.terms.map(function(w){ return '<span class="chip">' + esc(w) + '</span>'; }).join('') + '</div>' : '') +
+      (c.shifts && c.shifts.length ? '<p class="hint" style="margin-top:12px">Worked in ' + esc(c.shifts.join(', ')) + '.</p>' : ''),
+      null, null);
+  }
+
+  // ---- hints ----------------------------------------------------------
+  // Computed from the ticket's own checks, so a hint is always exactly as true
+  // as the grading is. Three levels: a question, then where to look, then the
+  // steps themselves.
+  function hintState(id){
+    S.hints = S.hints || {};
+    if(S.hints[id] == null) S.hints[id] = 0;
+    return S.hints[id];
+  }
+  function unmet(t){
+    return (t.checks || []).filter(function(ch){ return !ch.c.every(test); });
+  }
+  // Where a check lives, worked out from the shape of its condition rather than
+  // from anything written by hand.
+  function hintArea(ch){
+    var c = (ch.c && ch.c[0]) || {};
+    if(c.decom) return 'the application being retired, on its Decommission tab';
+    if(c.mined || c.role || c.roleFor || c.assigned || c.assignedFor || c.stripped || c.exception) return 'the Role model page';
+    if(c.cred || c.safe || c.inSafe || c.rotated || c.unmanagedGone) return 'the Credential vault';
+    if(c.ca || c.covers || c.notCovers || c.signInWouldBe) return 'Conditional access';
+    if(c.sso || c.entityId || c.acs || c.nameId || c.claim || c.certActive) return 'the application’s Single sign-on tab';
+    if(c.scim || c.scope || c.removeOnUnassign || c.noOrphans) return 'the application’s Provisioning tab';
+    if(c.hr) return 'the HR feed';
+    if(c.guest || c.sponsor || c.collab || c.allowList) return 'External identities';
+    if(c.pkg) return 'Access packages';
+    if(c.method || c.sspr || c.campaignOn || c.tap) return 'Authentication methods';
+    if(c.gpo || c.adOnly || c.adHas || c.adLacks || c.adOu || c.adTemp) return 'Active Directory';
+    if(c.share || c.open) return 'File shares';
+    if(c.svc || c.gmsa || c.spnNone) return 'Service accounts';
+    if(c.krb || c.trust || c.sidFiltering) return 'Active Directory — the trust and Kerberos side';
+    if(c.review || c.reviewDone) return 'Access reviews';
+    if(c.finding || c.evidence) return 'Audit findings';
+    if(c.risk || c.consent || c.revoked) return 'Identity protection and app consents';
+    if(c.bg || c.sealed) return 'Emergency access';
+    if(c.t) return 'this ticket — how it is answered and closed';
+    if(c.u || c.has || c.lacks || c.disabled || c.hold) return 'the person’s own record';
+    if(c.g || c.exactly) return 'the group’s membership';
+    return 'the directory';
+  }
+  function hintCard(t){
+    var st = S.tickets[t.id];
+    if(!st || st.status === 'resolved') return '';
+    var lvl = hintState(t.id), left = unmet(t), total = (t.checks||[]).length;
+    var body = '<p class="hint" style="margin:0 0 10px">Hints are graded honestly: using them does not change your score, and the scorecard records that you did.</p>';
+    if(lvl >= 1){
+      body += left.length
+        ? '<div class="note" style="margin:0 0 10px"><b>Where you are.</b> ' + left.length + ' of ' + total + ' step' + (total===1?'':'s') + ' on this ticket are still unaccounted for. Re-read what is actually being asked for, and what the policy says about it.</div>'
+        : '<div class="note ok" style="margin:0 0 10px"><b>Everything here is done.</b> All ' + total + ' steps are accounted for. You can resolve it.</div>';
+    }
+    if(lvl >= 2 && left.length){
+      var areas = [];
+      left.forEach(function(ch){ var a = hintArea(ch); if(areas.indexOf(a) < 0) areas.push(a); });
+      if(areas.length > 1) areas = areas.filter(function(a){ return a !== 'the directory'; });
+      body += '<div class="note" style="margin:0 0 10px"><b>Where to look.</b> What is left is in ' + esc(areas.join('; ')) + '.</div>';
+    }
+    if(lvl >= 3 && left.length){
+      body += '<div class="note" style="margin:0 0 10px"><b>What is left.</b><ul class="bul" style="margin:8px 0 0">' +
+        left.map(function(ch){ return '<li>' + esc(ch.label) + (ch.crit ? ' <span class="pill dis">critical</span>' : '') + '</li>'; }).join('') +
+        '</ul></div>';
+    }
+    var next = lvl >= 3 ? '' :
+      '<button class="btn sec sm" data-hint="' + esc(t.id) + '" type="button">' +
+      (lvl === 0 ? 'I’m stuck' : lvl === 1 ? 'Where should I look?' : 'Just tell me what’s left') + '</button>';
+    return '<div class="card" style="margin-top:14px"><div class="card-h"><h3>Stuck?</h3>' +
+      (lvl ? '<span class="faint mono">' + lvl + ' of 3 used</span>' : '') + '</div><div class="card-b">' + body + next + '</div></div>';
+  }
+  function hintBump(id){
+    S.hints = S.hints || {};
+    S.hints[id] = Math.min(3, (S.hints[id] || 0) + 1);
+    S.hintsUsed = true;
+    save(); render();
+  }
+  function hintsSummary(){
+    var h = S.hints || {}, ids = Object.keys(h).filter(function(k){ return h[k] > 0; });
+    if(!ids.length) return '';
+    var levels = ids.reduce(function(a,k){ return a + h[k]; }, 0);
+    return '<p class="hint" style="margin-top:10px">You used ' + levels + ' hint' + (levels===1?'':'s') + ' across ' +
+      ids.length + ' ticket' + (ids.length===1?'':'s') + '. That is recorded here rather than deducted, because the point is what you learned, not the number.</p>';
+  }
 
   // ---------- decommissioning an application ----------
   // Retiring an application is the only identity operation whose failure has no
@@ -4369,7 +4559,7 @@
         '<div><dt>SLA met</dt><dd>' + met + ' <span>of ' + D.tickets.length + '</span></dd></div>' +
         '<div><dt>Shift length</dt><dd>' + esc(dur(S.clock - D.startClock)) + '</dd></div>' +
       '</dl>' +
-      '<p class="hint" style="margin:4px 0 18px">A ticket scores 2 when every step is done, 1 when every critical step is done, and 0 when a critical step is missed.</p>' +
+      '<p class="hint" style="margin:4px 0 18px">A ticket scores 2 when every step is done, 1 when every critical step is done, and 0 when a critical step is missed.</p>' + hintsSummary() +
       rows + '<div class="row" style="margin-top:22px"><button class="btn big" id="again" type="button">Play again</button><button class="btn sec" id="review" type="button">Review the audit log</button><button class="btn sec" data-pick="1" type="button">All shifts</button></div></div></div>';
   }
 
@@ -4495,7 +4685,7 @@
       var b = document.getElementById('begin'); if(b) b.onclick = function(){ S.screen='login'; S.authErr=''; save(); render(); };
       var ln = document.getElementById('li-next'); if(ln){ var go = function(){ if(!document.getElementById('li-pass').value){ S.authErr = 'Enter your password.'; render(); return; } S.mfaNum = 10 + (hash('n'+Date.now()) % 89); S.screen='mfa'; S.authErr=''; save(); render(); }; ln.onclick = go; document.getElementById('li-pass').onkeydown = function(e){ if(e.key==='Enter') go(); }; }
       root.querySelectorAll('[data-n]').forEach(function(k){ k.onclick = function(){
-        if(+k.dataset.n===S.mfaNum){ S.screen='console'; var back = S.resumed; S.resumed = false; if(!S.signedIn){ S.signedIn = true; S.page='tickets'; } save(); render(); toast(back ? 'Signed back in · your shift is where you left it' : 'Signed in · session policy: re-authenticate every 8 hours'); }
+        if(+k.dataset.n===S.mfaNum){ S.screen='console'; var back = S.resumed; S.resumed = false; var firstEver = !S.signedIn && !tourDone(); if(!S.signedIn){ S.signedIn = true; S.page='tickets'; } if(firstEver) S.tour = 0; save(); render(); toast(back ? 'Signed back in · your shift is where you left it' : 'Signed in · session policy: re-authenticate every 8 hours'); }
         else { S.screen='login'; S.authErr='Wrong number entered. The sign-in request was denied. Try again.'; save(); render(); }
       }; });
       var dn = document.getElementById('mfa-deny'); if(dn) dn.onclick = function(){ S.screen='login'; S.authErr='You denied the request. If you didn’t start it, report it to Security.'; save(); render(); };
@@ -4514,8 +4704,10 @@
     root.innerHTML = '<div class="shell"><nav class="nav" aria-label="Console">' + navItems.map(function(n){
       if(n[0]==='sep') return '<div class="sep">' + n[1] + '</div>';
       return '<button class="' + (cur===n[0]?'on':'') + '" data-nav="' + n[0] + '" type="button"><span>' + n[1] + '</span>' + (n[0]==='tickets' ? '<span class="badge"' + (openCount()?'':' hidden') + '>' + openCount() + '</span>' : n[0]==='myroles' && pimOn() ? '<span class="badge warnb">PRA</span>' : '') + '</button>';
-    }).join('') + '<div class="navfoot"><div>Tenant <span class="mono">' + DOM + '</span></div><div>Signed in as ia.analyst</div><div class="mono">console build 4.19.0</div></div></nav><main class="main" id="main">' + page() + '</main></div>';
+    }).join('') + '<div class="navfoot"><div><button class="link" id="tourbtn" type="button">Walkthrough</button></div><div>Tenant <span class="mono">' + DOM + '</span></div><div>Signed in as ia.analyst</div><div class="mono">console build 4.19.0</div></div></nav><main class="main" id="main">' + page() + '</main></div>';
+    var tb = document.getElementById('tourbtn'); if(tb) tb.onclick = tourStart;
     wire();
+    tourPaint();
   }
   function split(s){ return s.split('|'); }
 
@@ -4592,6 +4784,8 @@
     on('[data-svcrot]', function(b){ svcRotate(b.dataset.svcrot); });
     on('[data-reportobj]', function(b){ reportObj(b.dataset.reportobj); });
     on('[data-job]', function(b){ var p = split(b.dataset.job); jobAction(p[0], +p[1], p[2]); });
+    on('[data-concept]', function(b){ conceptOpen(b.dataset.concept); });
+    on('[data-hint]', function(b){ hintBump(b.dataset.hint); });
     on('[data-decscan]', function(b){ decomScan(b.dataset.decscan); });
     on('[data-decsso]', function(b){ decomSso(b.dataset.decsso); });
     on('[data-decdep]', function(b){ decomDeprov(b.dataset.decdep); });
