@@ -140,7 +140,7 @@
   .nav button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
   .badge{font-family:var(--mono);font-size:11px;background:var(--accent);color:#fff;border-radius:10px;padding:0 7px}
   .nav .sep{height:1px;background:var(--rule);margin:10px 6px}
-  @media(max-width:760px){.shell{grid-template-columns:minmax(0,1fr)}.nav{display:flex;overflow-x:auto;gap:4px;border-right:none;border-bottom:1px solid var(--rule);padding:6px}.nav button{width:auto;white-space:nowrap;gap:6px}.nav .sep{display:none}}
+  @media(max-width:760px){.shell{grid-template-columns:minmax(0,1fr)}.nav{display:flex;flex-wrap:wrap;overflow:visible;gap:4px;border-right:none;border-bottom:1px solid var(--rule);padding:8px}.nav button{width:auto;white-space:nowrap;gap:6px;padding:6px 9px;font-size:12.5px}.nav .sep{display:none}}
 
   .main{padding:18px 22px 60px;min-width:0}
   @media(max-width:760px){.main{padding:14px 16px 60px}}
@@ -543,3 +543,18 @@
   }
   @keyframes shiftIn{from{opacity:0; transform:translateY(10px)}to{opacity:1; transform:none}}
   @keyframes frontIn{from{opacity:0; transform:translateY(8px)}to{opacity:1; transform:none}}
+
+/* training: walkthrough, concept cards */
+.tour-ring{border:2px solid var(--accent);border-radius:var(--r);box-shadow:0 0 0 4px var(--accent-soft);pointer-events:none;z-index:60;transition:all .18s ease}
+.tour-panel{position:fixed;right:22px;bottom:22px;width:330px;max-width:calc(100vw - 32px);background:var(--surface);border:1px solid var(--rule);border-radius:var(--r);box-shadow:var(--sh-2);padding:16px 16px 14px;z-index:61}
+.tour-panel h3{margin:4px 0 6px;font-size:16px}
+.tour-panel p{margin:0 0 12px;font-size:13.5px;color:var(--ink-soft);line-height:1.5}
+.tour-n{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)}
+.tour-f{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.conc{display:block;width:100%;text-align:left;background:var(--surface-2);border:1px solid var(--rule);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px;cursor:pointer;font:inherit;color:inherit}
+.conc:hover{border-color:var(--accent)}
+.conc b{display:block;font-size:14px;margin-bottom:2px}
+.conc .faint{font-size:12.5px}
+h4.ch{margin:16px 0 4px;font-size:13px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-faint);font-family:var(--mono);font-weight:600}
+.note.ok{border-color:var(--ok);background:var(--ok-soft)}
+@media (max-width:640px){.tour-panel{right:12px;left:12px;width:auto;bottom:12px}}

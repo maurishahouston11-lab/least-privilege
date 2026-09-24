@@ -4696,7 +4696,7 @@
       var rv = document.getElementById('review'); if(rv) rv.onclick = function(){ S.screen='console'; S.page='audit'; S.acat='mine'; S.done = true; save(); render(); };
       return;
     }
-    var navItems = [['home','Home'],['tickets','Tickets'],['sep','Sources'],['hr','HR feed'],['sep','Cloud directory'],['users','Users'],['groups','Groups'],['roles','Admin roles'],['apps','Applications'],['licenses','Licenses'],['ca','Conditional access'],['authm','Authentication methods'],['sep','Governance'],['vault','Credential vault'],['rbac','Role model'],['ext','External identities'],['pkg','Access packages'],['review','Access reviews'],['findings','Audit findings'],['svc','Service accounts'],['appregs','App registrations'],['risk','Identity protection'],['consents','App consents'],['bg','Emergency access'],['sep','On-premises'],['ad','Active Directory'],['gpo','Group Policy'],['shares','File shares'],['sync','Directory sync'],['sep','Tools'],['ps','PowerShell'],['sep','Monitoring'],['report','Reporting'],['signins','Sign-in logs'],['audit','Audit log'],['sep','Reference'],['policy','Access policy'],['runbooks','Runbooks'],['sep','You'],['myroles','My roles'],['scenarios','Scenarios']];
+    var navItems = [['home','Home'],['tickets','Tickets'],['sep','Sources'],['hr','HR feed'],['sep','Cloud directory'],['users','Users'],['groups','Groups'],['roles','Admin roles'],['apps','Applications'],['licenses','Licenses'],['ca','Conditional access'],['authm','Authentication methods'],['sep','Governance'],['vault','Credential vault'],['rbac','Role model'],['ext','External identities'],['pkg','Access packages'],['review','Access reviews'],['findings','Audit findings'],['svc','Service accounts'],['appregs','App registrations'],['risk','Identity protection'],['consents','App consents'],['bg','Emergency access'],['sep','On-premises'],['ad','Active Directory'],['gpo','Group Policy'],['shares','File shares'],['sync','Directory sync'],['sep','Tools'],['ps','PowerShell'],['sep','Monitoring'],['report','Reporting'],['signins','Sign-in logs'],['audit','Audit log'],['sep','Reference'],['policy','Access policy'],['runbooks','Runbooks'],['sep','You'],['myroles','My roles'],['tour','Walkthrough'],['scenarios','Scenarios']];
     var cur = {ticket:'tickets', user:'users', group:'groups', role:'roles', app:'apps'}[S.page] || S.page;
     navItems = navItems.filter(function(n){ return !(n[0]==='rbac' && !D.roleModel) && !(n[0]==='vault' && !D.vault) && !(n[0]==='authm' && !D.authMethods) && !(n[0]==='ext' && !D.external) && !(n[0]==='pkg' && !D.packages) && !(n[0]==='hr' && !D.hrFeed) && !(n[0]==='review' && !D.review) && !(n[0]==='findings' && !D.findings) && !(n[0]==='svc' && !svcList().length) && !(n[0]==='appregs' && !S.appRegs.length) && !(n[0]==='risk' && !S.risk.length) && !(n[0]==='consents' && !S.consents.length) && !(n[0]==='bg' && !(S.bg||[]).length) && !(n[0]==='scenarios' && Object.keys(SCN).length<2); });
     navItems = navItems.filter(function(n, ix){ if(n[0]!=='sep') return true; for(var k=ix+1;k<navItems.length;k++){ if(navItems[k][0]!=='sep') return true; } return false; });
@@ -4704,8 +4704,7 @@
     root.innerHTML = '<div class="shell"><nav class="nav" aria-label="Console">' + navItems.map(function(n){
       if(n[0]==='sep') return '<div class="sep">' + n[1] + '</div>';
       return '<button class="' + (cur===n[0]?'on':'') + '" data-nav="' + n[0] + '" type="button"><span>' + n[1] + '</span>' + (n[0]==='tickets' ? '<span class="badge"' + (openCount()?'':' hidden') + '>' + openCount() + '</span>' : n[0]==='myroles' && pimOn() ? '<span class="badge warnb">PRA</span>' : '') + '</button>';
-    }).join('') + '<div class="navfoot"><div><button class="link" id="tourbtn" type="button">Walkthrough</button></div><div>Tenant <span class="mono">' + DOM + '</span></div><div>Signed in as ia.analyst</div><div class="mono">console build 4.19.0</div></div></nav><main class="main" id="main">' + page() + '</main></div>';
-    var tb = document.getElementById('tourbtn'); if(tb) tb.onclick = tourStart;
+    }).join('') + '<div class="navfoot"><div>Tenant <span class="mono">' + DOM + '</span></div><div>Signed in as ia.analyst</div><div class="mono">console build 4.19.0</div></div></nav><main class="main" id="main">' + page() + '</main></div>';
     wire();
     tourPaint();
   }
@@ -4732,7 +4731,7 @@
         if(ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar'){ ev.preventDefault(); tr.click(); }
       };
     });
-    on('[data-nav]', function(b){ nav(b.dataset.nav); });
+    on('[data-nav]', function(b){ if(b.dataset.nav==='tour') return tourStart(); nav(b.dataset.nav); });
     m.querySelectorAll('[data-ticket]').forEach(function(b){ b.onclick = function(){ nav('ticket', b.dataset.ticket); }; });
     on('[data-user]', function(b){ nav('user', b.dataset.user); });
     on('[data-group]', function(b){ S.gtab='members'; nav('group', b.dataset.group); });
