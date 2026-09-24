@@ -2999,9 +2999,12 @@
     save(); render();
   }
   // Drawn after the page paints, so the ring lands on whatever is actually there.
-  function tourPaint(){
+  function tourClear(){
     document.querySelectorAll('.tour-ring').forEach(function(x){ x.remove(); });
     var old = document.getElementById('tourpanel'); if(old) old.remove();
+  }
+  function tourPaint(){
+    tourClear();
     if(S.tour == null || S.screen !== 'console') return;
     var n = S.tour, step = TOUR[n];
     if(!step) return;
@@ -4694,6 +4697,7 @@
   }
   function render(){
     chrome();
+    if(S.screen !== 'console'){ tourClear(); S.tour = null; }
     if(S.screen!=='console'){
       root.innerHTML = S.screen==='pick' ? pPick() : S.screen==='intro' ? pIntro() : S.screen==='login' ? pLogin() : S.screen==='mfa' ? pMfa() : S.screen==='later' ? pLater() : pScore();
       root.querySelectorAll('[data-scn]').forEach(function(b){ b.onclick = function(){
