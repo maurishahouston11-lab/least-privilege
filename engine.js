@@ -2942,31 +2942,60 @@
     { page:'tickets', sel:'.nav',
       title:'This is a console, not a quiz',
       body:'On the left is everything a real hybrid identity estate has: a cloud directory, an on-premises Active Directory, conditional access, a credential vault, reporting. You can open any of it at any time. Nothing here is a menu of right answers.' },
-    { page:'tickets', sel:'#tk-list, .tk-list, main',
+    { page:'tickets', sel:'.tl, .bar',
+      title:'The clock is running',
+      body:'Every action costs time, and the bar shows the day passing. Tickets have a due time and you will not get to everything. Working fast and wrong is the most expensive thing you can do here, but so is spending the morning on one request.' },
+    { page:'tickets', sel:'main, #main',
       title:'The queue is the work',
-      body:'Each shift is a day of real tickets. People ask for things, some of which they should not get, and one of them is usually not who they say they are. Tickets arrive while you work, so the queue at 08:00 is not the queue at noon.' },
-    { page:'tickets', sel:'[data-ticket]',
-      title:'Open one and read it properly',
-      body:'A ticket is a person asking for something in their own words. The information you need is spread across the request, the person’s record, the policy and the directory itself — which is the actual skill being tested.' },
+      body:'Each shift is a day of real requests. People ask for things, some of which they should not get, and one of them is usually not who they say they are. More arrive while you work \u2014 the queue at 08:00 is not the queue at noon.' },
+    { openTicket:true, sel:'.msg',
+      title:'Read the request properly',
+      body:'A ticket is a person asking for something in their own words, and the words matter. What they ask for and what they need are not always the same, and a reasonable-sounding request is sometimes the one the policy forbids.' },
+    { openTicket:true, sel:'.links, .card',
+      title:'The answer is spread around',
+      body:'Related records link to the people and systems involved. The information you need to decide is in their record, in the policy and in the directory \u2014 not in the ticket. Going and looking is the skill being tested.' },
+    { openTicket:true, sel:'.rb, .card',
+      title:'The runbook is yours',
+      body:'Each ticket type has a checklist. Ticking a box changes nothing in the directory \u2014 it is there so you can keep your place. The grader does not read it; it reads what you actually did.' },
+    { openTicket:true, sel:'[data-concept], .card',
+      title:'The concept behind it',
+      body:'Every ticket carries the ideas it exercises \u2014 what the work is really called, why it matters, what goes wrong without it, and the words an interviewer will use. Open one any time; it never gives away the answer.' },
+    { openTicket:true, sel:'[data-hint], .card',
+      title:'Stuck is allowed',
+      body:'Hints escalate: a count of what is unaccounted for, then where to look, then the outstanding steps themselves. They are computed from the same checks that grade you, so they are always accurate. Using them is recorded and costs you nothing.' },
     { page:'users', sel:'tr.click, tbody',
       title:'Every identity has two halves',
-      body:'Open anybody. Their cloud account and their Active Directory object are shown side by side, and they disagree with each other more often than you would like. That disagreement is the whole problem with hybrid identity, and several shifts turn on it.' },
+      body:'Open anybody. Their cloud account and their Active Directory object sit side by side, and they disagree more often than you would like. That disagreement is the whole problem with hybrid identity, and several shifts turn on it.' },
     { page:'policy', sel:'main, .card',
       title:'There is a written policy',
-      body:'It is not decoration. Tickets cite sections of it, the grader expects you to have followed it, and one or two requests are reasonable-sounding things the policy forbids.' },
+      body:'It is not decoration. Tickets cite sections of it, and one or two requests are reasonable-sounding things it forbids. When you resolve a ticket, naming the section you relied on is part of the job \u2014 and the scorecard counts it.' },
+    { openTicket:true, sel:'#r-disp, .composer',
+      title:'Some answers are not yours to give',
+      body:'A few requests need somebody else to approve them, and routing a ticket to that person is a real option rather than a delay. Deciding alone something that needed an owner\u2019s yes is a way to lose a step even when the outcome is right.' },
+    { openTicket:true, sel:'#r-note, #r-disp',
+      title:'Resolving records the decision',
+      body:'Make the change in the directory first; resolving does not do it for you. Then pick what you did, and write a work note saying what and why, citing the policy. A control you cannot evidence did not happen, which is true here and true in the job.' },
+    { page:'audit', sel:'main, .card',
+      title:'Everything you do is logged',
+      body:'Every action lands in the audit log with a timestamp and your name on it. It is the evidence the auditor asks for in shift 2, and it is worth knowing it exists before you need it.' },
     { page:'tickets', sel:'#endshift',
       title:'Ending the shift is the point',
-      body:'When you end a shift, every step you took — and every one you skipped — comes back as what it cost, three months later, to a named person. That scorecard is the reason this exists. You are meant to end a shift having missed things.' }
+      body:'A ticket scores 2 when every step is done, 1 when every critical step is done, and 0 when a critical one is missed. Then every step you skipped comes back as what it cost, three months later, to a named person. You are meant to end a shift having missed things \u2014 that is where the teaching is.' }
   ];
 
   function tourDone(){ try{ return localStorage.getItem('lp.console.tour') === 'done'; }catch(e){ return false; } }
   function tourFinish(){ try{ localStorage.setItem('lp.console.tour','done'); }catch(e){} S.tour = null; save(); render(); }
-  function tourStart(){ S.tour = 0; save(); render(); }
+  function tourStart(){ tourGo(0); }
   function tourGo(n){
     if(n < 0 || n >= TOUR.length) return tourFinish();
     S.tour = n;
     var step = TOUR[n];
-    if(step.page && S.page !== step.page){ S.page = step.page; S.arg = null; }
+    if(step.openTicket){
+      if(S.page !== 'ticket' || !S.arg){
+        var open1 = D.tickets.filter(function(t){ var st = S.tickets[t.id]; return st && st.arrived && st.status !== 'resolved'; })[0] || D.tickets[0];
+        if(open1){ S.page = 'ticket'; S.arg = open1.id; }
+      }
+    } else if(step.page && S.page !== step.page){ S.page = step.page; S.arg = null; window.scrollTo(0,0); }
     save(); render();
   }
   // Drawn after the page paints, so the ring lands on whatever is actually there.
@@ -2979,7 +3008,8 @@
     var el = null;
     (step.sel || '').split(',').some(function(s){ el = document.querySelector(s.trim()); return !!el; });
     if(el){
-      if(el.getBoundingClientRect().top > window.innerHeight - 120) el.scrollIntoView({block:'center'});
+      var q = el.getBoundingClientRect();
+      if(q.top < 70 || q.bottom > window.innerHeight - 170) el.scrollIntoView({block:'center'});
       var r = el.getBoundingClientRect();
       var ring = document.createElement('div');
       ring.className = 'tour-ring';
@@ -2988,7 +3018,21 @@
       document.body.appendChild(ring);
     }
     var p = document.createElement('div');
-    p.className = 'tour-panel'; p.id = 'tourpanel';
+    // the panel must not sit on top of the thing it is describing
+    var side = '';
+    if(el){
+      var t = el.getBoundingClientRect();
+      // below the wrap breakpoint the panel spans the full width, so its box is
+      // not the same one it occupies on a desktop
+      var narrow = window.innerWidth <= 640;
+      var pLeft = narrow ? 12 : window.innerWidth - 352;
+      var pRight = narrow ? window.innerWidth - 12 : window.innerWidth;
+      var pTop = window.innerHeight - 262;
+      if(t.right > pLeft && t.left < pRight && t.bottom > pTop){
+        side = (!narrow && t.left > 360) ? ' left' : ' top';
+      }
+    }
+    p.className = 'tour-panel' + side; p.id = 'tourpanel';
     p.setAttribute('role','dialog'); p.setAttribute('aria-label','Walkthrough');
     p.innerHTML = '<div class="tour-n">Step ' + (n+1) + ' of ' + TOUR.length + '</div>' +
       '<h3>' + esc(step.title) + '</h3><p>' + esc(step.body) + '</p>' +

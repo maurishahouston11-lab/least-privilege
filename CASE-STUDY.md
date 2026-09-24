@@ -172,8 +172,13 @@ idle, so offline still works. First paint went from 1.45MB to 512KB.
 
 Three additions, none of which touch the grader.
 
-A **walkthrough** runs on a first-ever sign-in: six steps that put a ring around
-real console furniture rather than describing it in prose. It exists because
+A **walkthrough** runs on a first-ever sign-in: fourteen steps that put a ring
+around real console furniture rather than describing it in prose. It covers the
+mechanics the scorecard measures but nothing else mentions — the clock and SLA,
+routing for approval, the work note and citing policy, the audit log — and the
+training layer itself. The panel works out whether it would cover the thing it
+is pointing at and moves out of the way, which matters more than it sounds,
+because at narrow widths it spans the full width and can only dodge upwards. It exists because
 somebody opening the live site cold lands in a console with twenty-four
 navigation pages and no idea what they are allowed to touch, and a recruiter with
 four minutes will simply leave.

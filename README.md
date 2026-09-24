@@ -21,8 +21,10 @@ the shift ends you find out what every decision cost three months later.
 Ten minutes, in this order:
 
 0. **Take the walkthrough.** It runs automatically the first time you sign in —
-   six steps, thirty seconds, and it points at the real console rather than
-   describing it. It's in the sidebar afterwards if you skip it.
+   fourteen steps that point at the real console rather than describing it,
+   covering the clock and the SLA, how a ticket is read and resolved, the work
+   note the scorecard actually measures, the concept cards, the hints, and how
+   scoring works. It's in the sidebar afterwards if you skip it.
 1. **Shift 1 — First Week.** Six tickets, the ordinary day. It teaches the
    console and the scoring.
 2. End the shift without finishing everything. **Read the scorecard**: each

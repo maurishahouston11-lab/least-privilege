@@ -549,6 +549,9 @@
 .tour-panel{position:fixed;right:22px;bottom:22px;width:330px;max-width:calc(100vw - 32px);background:var(--surface);border:1px solid var(--rule);border-radius:var(--r);box-shadow:var(--sh-2);padding:16px 16px 14px;z-index:61}
 .tour-panel h3{margin:4px 0 6px;font-size:16px}
 .tour-panel p{margin:0 0 12px;font-size:13.5px;color:var(--ink-soft);line-height:1.5}
+
+.tour-panel.left{right:auto;left:22px}
+.tour-panel.top{bottom:auto;top:90px}
 .tour-n{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint)}
 .tour-f{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .conc{display:block;width:100%;text-align:left;background:var(--surface-2);border:1px solid var(--rule);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px;cursor:pointer;font:inherit;color:inherit}
@@ -557,4 +560,4 @@
 .conc .faint{font-size:12.5px}
 h4.ch{margin:16px 0 4px;font-size:13px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-faint);font-family:var(--mono);font-weight:600}
 .note.ok{border-color:var(--ok);background:var(--ok-soft)}
-@media (max-width:640px){.tour-panel{right:12px;left:12px;width:auto;bottom:12px}}
+@media (max-width:640px){.tour-panel{right:12px;left:12px;width:auto;bottom:12px}.tour-panel.left{left:12px;right:12px}.tour-panel.top{top:76px;bottom:auto}}
